@@ -1,0 +1,10 @@
+services:
+  storyvenue-api:
+    build:
+      context: ./server
+    container_name: storyvenue-api
+    env_file:
+      - ./server/.env
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
