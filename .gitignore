@@ -26,3 +26,6 @@ app/local.properties
 
 # 생성된 오디오 파일
 .generated-audio/
+
+# 발표 자료
+docs/presentation/
