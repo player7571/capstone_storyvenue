@@ -1,3 +1,3 @@
-from . import auth, health, messages, sessions, voice
+from . import auth, chat, health, messages, sessions, voice
 
-__all__ = ["auth", "health", "messages", "sessions", "voice"]
+__all__ = ["auth", "chat", "health", "messages", "sessions", "voice"]
