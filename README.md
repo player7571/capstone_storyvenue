@@ -99,3 +99,4 @@ docker compose down            # 서버 끄기
 ## 라이선스
 
 Private — 팀 내부 프로젝트
+// fix init setup
