@@ -45,6 +45,3 @@ fun GreetingPreview() {
         Greeting("Android")
     }
 }
-// test
-// test 22
-//test final
