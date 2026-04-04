@@ -1,4 +1,4 @@
-# 역할 C — 백엔드: 인증 · 세션 · 음성
+# 역할 C — 백엔드: 인증 · 세션 · 음성 · 프로필
 
 > **담당자**: \_\_\_\_\_\_\_\_  
 > **브랜치 접두사**: `feature/be-auth/`  
@@ -25,6 +25,9 @@
 | `GET /sessions/{id}` | 세션 상세 조회 |
 | `POST /voice/turn` | 음성 파일 받아서 STT → AI 응답 → TTS 반환 |
 | `GET /messages` | 세션 대화 기록 조회 |
+| `GET /users/me` | 내 프로필 조회 **(신규)** |
+| `PUT /users/me` | 프로필 수정 (이름) **(신규)** |
+| `DELETE /users/me` | 회원탈퇴 (계정 삭제) **(신규)** |
 
 ---
 
@@ -239,7 +242,38 @@ git commit -m "feat(voice): STT→AI응답→TTS 음성 인터뷰 API 구현"
 
 ---
 
-### STEP 7 — 대화 기록 API 만들기
+### STEP 7 — 프로필 API 만들기 (신규)
+
+**Codex에 붙여넣을 프롬프트:**
+```
+FastAPI users.py에 아래 API를 만들어줘.
+Supabase의 auth.users와 profiles 테이블을 사용해줘.
+profiles 테이블 컬럼: id(uuid, auth.users.id 참조), name(text), email(text), notification_enabled(bool), created_at
+
+GET /users/me (인증 필요)
+- 내 프로필 정보 반환
+- 반환: { "id": string, "name": string, "email": string, "notification_enabled": bool, "created_at": string }
+
+PUT /users/me (인증 필요)
+- 요청: { "name": string (선택), "notification_enabled": bool (선택) }
+- 변경된 프로필 정보 반환
+
+DELETE /users/me (인증 필요)
+- Supabase Auth에서 사용자 삭제 (service_role 키 사용)
+- 관련 데이터(세션, 챕터, 피드 등) 삭제는 DB cascade로 처리
+- 반환: { "message": "회원탈퇴가 완료되었습니다" }
+
+회원가입(POST /auth/signup) 성공 시 profiles 테이블에도 자동으로 행을 생성해줘.
+```
+
+**커밋:**
+```bash
+git commit -m "feat(user): 프로필 조회/수정/탈퇴 API 구현"
+```
+
+---
+
+### STEP 8 — 대화 기록 API 만들기
 
 **Codex에 붙여넣을 프롬프트:**
 ```
@@ -264,6 +298,8 @@ git commit -m "feat(session): 대화 기록 조회 API 구현"
 - [ ] 회원가입 후 로그인하면 `access_token` 이 반환된다
 - [ ] 세션을 만들고 목록을 조회할 수 있다
 - [ ] 음성 파일을 보내면 텍스트와 AI 음성 응답이 돌아온다
+- [ ] 내 프로필을 조회하고 수정할 수 있다 **(신규)**
+- [ ] 회원탈퇴 시 계정이 삭제된다 **(신규)**
 - [ ] 안드로이드 앱에서 로그인이 실제로 된다
 
 ---
@@ -271,6 +307,15 @@ git commit -m "feat(session): 대화 기록 조회 API 구현"
 ## Supabase 테이블 설계 (팀장과 공유)
 
 ```sql
+-- 프로필 테이블 (신규)
+CREATE TABLE profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  name TEXT,
+  email TEXT,
+  notification_enabled BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- 세션 테이블
 CREATE TABLE interview_sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

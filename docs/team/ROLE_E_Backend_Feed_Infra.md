@@ -1,4 +1,4 @@
-# 역할 E — 백엔드: 피드 · 채팅 · 인프라 관리
+# 역할 E — 백엔드: 피드 · 댓글 · 채팅 · 알림 · 인프라 관리
 
 > **담당자**: \_\_\_\_\_\_\_\_  
 > **브랜치 접두사**: `feature/be-infra/`  
@@ -8,7 +8,7 @@
 
 ## 내 역할 한 줄 요약
 
-사용자들이 서로 연결되는 **피드(게시판)와 채팅** 기능을 서버에서 처리하고,  
+사용자들이 서로 연결되는 **피드(게시판), 댓글, 채팅, 알림** 기능을 서버에서 처리하고,  
 팀 전체가 쓰는 **서버 환경(Docker)을 관리**하는 역할입니다.  
 팀원 5명 모두의 컴퓨터에서 서버가 잘 돌아가게 만드는 것도 이 역할의 책임입니다.
 
@@ -23,6 +23,12 @@
 | `GET /feed/{post_id}` | 피드 상세 조회 |
 | `POST /feed/{post_id}/like` | 좋아요 토글 |
 | `POST /feed/{post_id}/read` | 읽음 처리 |
+| `GET /feed/{post_id}/comments` | 댓글 목록 조회 **(신규)** |
+| `POST /feed/{post_id}/comments` | 댓글 작성 **(신규)** |
+| `DELETE /comments/{comment_id}` | 댓글 삭제 **(신규)** |
+| `GET /notifications` | 알림 목록 조회 **(신규)** |
+| `PUT /notifications/{id}/read` | 알림 읽음 처리 **(신규)** |
+| `GET /notifications/unread-count` | 읽지 않은 알림 수 **(신규)** |
 | `GET /chat` | 채팅 상대 목록 |
 | `GET /chat/{user_id}/messages` | 채팅 메시지 목록 |
 | `POST /chat/{user_id}/messages` | 채팅 메시지 전송 |
@@ -221,7 +227,72 @@ git commit -m "feat(safety): 콘텐츠 안전 검사 API 구현 및 피드 연�
 
 ---
 
-### STEP 6 — 서버 배포 (EC2 또는 로컬 공유)
+### STEP 6 — 댓글 API 만들기 (신규)
+
+**Codex에 붙여넣을 프롬프트:**
+```
+FastAPI comments.py에 아래 API를 만들어줘.
+Supabase의 feed_comments 테이블을 사용해줘.
+테이블 컬럼: id(uuid), post_id(uuid), user_id(uuid), content(text), created_at
+
+GET /feed/{post_id}/comments (인증 필요)
+- 해당 게시물의 댓글 목록 반환 (시간순)
+- 각 댓글에 작성자 이름도 포함해줘
+
+POST /feed/{post_id}/comments (인증 필요)
+- 요청: { "content": string }
+- 댓글 저장 후 반환
+- 댓글 작성 시 게시물 작성자에게 알림 자동 생성 (본인 글에 본인이 댓글 달면 알림 제외)
+
+DELETE /comments/{comment_id} (인증 필요)
+- 본인이 작성한 댓글만 삭제 가능
+- 다른 사람 댓글이면 403 에러
+```
+
+**커밋:**
+```bash
+git commit -m "feat(comment): 댓글 CRUD API 구현"
+```
+
+---
+
+### STEP 7 — 알림 API 만들기 (신규)
+
+**Codex에 붙여넣을 프롬프트:**
+```
+FastAPI notifications.py에 아래 API를 만들어줘.
+Supabase의 notifications 테이블을 사용해줘.
+테이블 컬럼: id(uuid), user_id(uuid), type(text), actor_id(uuid), post_id(uuid), comment_id(uuid nullable), message(text), is_read(bool), created_at
+
+알림 type 종류: "comment" (댓글), "like" (좋아요)
+
+GET /notifications (인증 필요)
+- 내 알림 목록 반환 (최신순)
+- 쿼리 파라미터: limit(기본 30), offset(기본 0)
+- 각 알림에 actor(알림 발생시킨 사람)의 이름도 포함해줘
+- 반환: [{ "id", "type", "actor_name", "post_id", "message", "is_read", "created_at" }]
+
+GET /notifications/unread-count (인증 필요)
+- 읽지 않은 알림 수 반환
+- 반환: { "count": int }
+
+PUT /notifications/{notification_id}/read (인증 필요)
+- 해당 알림을 읽음 처리
+- 반환: { "message": "읽음 처리 완료" }
+
+좋아요(POST /feed/{post_id}/like) API에도 알림 생성 로직을 추가해줘:
+- 좋아요를 누를 때 게시물 작성자에게 알림 생성 (본인 글에 본인이 좋아요하면 알림 제외)
+- 좋아요 취소 시에는 알림 생성하지 않음
+```
+
+**커밋:**
+```bash
+git commit -m "feat(notification): 알림 API 구현 및 댓글/좋아요 알림 연동"
+```
+
+---
+
+### STEP 8 — 서버 배포 (EC2 또는 로컬 공유)
 
 팀원들이 실기기로 테스트할 수 있도록 서버를 외부에서 접근 가능하게 만듭니다.
 
@@ -249,7 +320,7 @@ git commit -m "docs(infra): 서버 공유 방법 문서 추가"
 
 ---
 
-### STEP 7 — 모니터링 (서버 로그 확인)
+### STEP 9 — 모니터링 (서버 로그 확인)
 
 팀원들이 앱을 쓸 때 서버에서 에러가 나면 이 역할이 가장 먼저 확인합니다.
 
@@ -272,6 +343,9 @@ docker compose logs -f storyvenue-api
 - [ ] 팀원 5명 모두 서버에 접속할 수 있다
 - [ ] 피드에 게시물을 올리고 볼 수 있다
 - [ ] 좋아요 기능이 작동한다
+- [ ] 피드 상세에서 댓글을 작성하고 조회할 수 있다 **(신규)**
+- [ ] 댓글/좋아요 시 게시물 작성자에게 알림이 생성된다 **(신규)**
+- [ ] 알림 목록을 조회하고 읽음 처리할 수 있다 **(신규)**
 - [ ] 채팅 메시지를 주고받을 수 있다
 - [ ] 부적절한 내용은 피드에 올라가지 않는다
 
@@ -298,6 +372,28 @@ CREATE TABLE feed_likes (
   post_id UUID REFERENCES feed_posts(id),
   created_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE(user_id, post_id)
+);
+
+-- 댓글 테이블 (신규)
+CREATE TABLE feed_comments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  post_id UUID REFERENCES feed_posts(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id),
+  content TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 알림 테이블 (신규)
+CREATE TABLE notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id),
+  type TEXT CHECK (type IN ('comment', 'like')),
+  actor_id UUID REFERENCES auth.users(id),
+  post_id UUID REFERENCES feed_posts(id),
+  comment_id UUID REFERENCES feed_comments(id),
+  message TEXT,
+  is_read BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- 채팅 테이블
