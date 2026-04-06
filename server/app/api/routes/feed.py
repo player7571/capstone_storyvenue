@@ -10,6 +10,7 @@ from app.api.schemas.feed import (
     LikeToggleResponse,
 )
 from app.db.supabase import get_supabase
+from app.services.safety import check_content_safety
 
 router = APIRouter(prefix="/feed", tags=["feed"])
 
@@ -47,6 +48,14 @@ async def create_feed_post(
     body: FeedCreateRequest,
     user_id: str = Depends(get_current_user_id),
 ):
+    # 게시 전 안전 검사
+    safety = check_content_safety(f"{body.title}\n{body.preview}")
+    if not safety["safe"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"부적절한 콘텐츠가 감지되었습니다: {safety['reason']}",
+        )
+
     sb = get_supabase()
     row = (
         sb.table("feed_posts")

@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     supabase_service_role_key: str = Field(validation_alias="SUPABASE_SERVICE_ROLE_KEY")
     allow_dev_user_header: bool = Field(default=True, validation_alias="ALLOW_DEV_USER_HEADER")
     openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
+    openai_safety_model: str = Field(default="gpt-4.1-mini", validation_alias="OPENAI_SAFETY_MODEL")
+    openai_safety_prompt: str | None = Field(default=None, validation_alias="OPENAI_SAFETY_PROMPT")
 
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,
