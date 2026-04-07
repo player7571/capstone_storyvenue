@@ -1,37 +1,52 @@
-from fastapi import Depends, Header, HTTPException, status
+from uuid import UUID
 
-from app.core.config import Settings, get_settings
-from app.db.supabase import get_supabase
+from fastapi import Header, HTTPException, status
+
+from app.db.client import get_supabase_anon_client
 
 
-async def get_current_user_id(
-    authorization: str | None = Header(None),
-    x_dev_user_id: str | None = Header(None),
-    settings: Settings = Depends(get_settings),
-) -> str:
-    """Supabase JWT에서 user_id를 추출한다.
-
-    개발 편의를 위해 allow_dev_user_header=True이고
-    X-Dev-User-Id 헤더가 있으면 해당 값을 그대로 반환한다.
-    """
-    # 개발 모드: X-Dev-User-Id 헤더 허용
-    if settings.allow_dev_user_header and x_dev_user_id:
-        return x_dev_user_id
-
-    if not authorization or not authorization.startswith("Bearer "):
+def _extract_bearer_token(authorization: str | None) -> str:
+    if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authorization 헤더가 필요합니다.",
         )
 
-    token = authorization.removeprefix("Bearer ")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization 형식은 'Bearer <토큰>' 이어야 합니다.",
+        )
+
+    return token.strip()
+
+
+async def get_current_user_id(
+    authorization: str | None = Header(None),
+) -> str:
+    """Authorization Bearer 토큰을 Supabase로 검증해 user_id(UUID)를 반환한다."""
+    token = _extract_bearer_token(authorization)
 
     try:
-        sb = get_supabase()
-        user = sb.auth.get_user(token)
-        return user.user.id
-    except Exception:
+        supabase = get_supabase_anon_client()
+        response = supabase.auth.get_user(token)
+        user = getattr(response, "user", None)
+        user_id = getattr(user, "id", None)
+
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="유효하지 않은 토큰입니다.",
+            )
+
+        # UUID 형식이 아닌 경우 인증 실패로 처리
+        validated_user_id = UUID(str(user_id))
+        return str(validated_user_id)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="유효하지 않은 토큰입니다.",
-        )
+        ) from exc
