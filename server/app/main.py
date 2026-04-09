@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, health, chapters, messages, sessions, voice, feed, memory, chat, safety
+from app.api.routes import auth, book, chat, chapters, feed, health, memory, messages, safety, sessions, voice
 
 app = FastAPI(title="StoryVenue API", version="0.1.0")
 
@@ -23,3 +23,4 @@ app.include_router(feed.router)
 app.include_router(memory.router)
 app.include_router(chat.router)
 app.include_router(safety.router)
+app.include_router(book.router)
