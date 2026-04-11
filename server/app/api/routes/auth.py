@@ -3,7 +3,7 @@ import json
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from app.db.client import get_supabase_anon_client
+from app.db.client import get_supabase_anon_client, get_supabase_service_client
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -67,10 +67,10 @@ def _to_korean_error_message(exc: Exception, default_message: str) -> str:
 
 @router.post("/signup", response_model=SignupResponse)
 def signup(payload: SignupRequest) -> SignupResponse:
-    supabase = get_supabase_anon_client()
+    anon_supabase = get_supabase_anon_client()
 
     try:
-        response = supabase.auth.sign_up(
+        response = anon_supabase.auth.sign_up(
             {
                 "email": payload.email,
                 "password": payload.password,
@@ -89,6 +89,28 @@ def signup(payload: SignupRequest) -> SignupResponse:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="회원가입에 실패했습니다. 입력 정보를 다시 확인해주세요.",
         )
+
+    try:
+        user = response.user
+        (
+            get_supabase_service_client()
+            .table("profiles")
+            .upsert(
+                {
+                    "id": str(user.id),
+                    "name": payload.name,
+                    "email": payload.email,
+                    "notification_enabled": True,
+                },
+                on_conflict="id",
+            )
+            .execute()
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="회원가입은 되었지만 프로필 생성에 실패했습니다. 관리자에게 문의해주세요.",
+        ) from exc
 
     return SignupResponse(message="회원가입 성공")
 
