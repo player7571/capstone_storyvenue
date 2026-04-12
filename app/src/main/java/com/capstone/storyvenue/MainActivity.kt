@@ -4,47 +4,21 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import com.capstone.storyvenue.ui.theme.Capstone_storyvenue_appTheme
+import com.capstone.storyvenue.ui.navigation.StoryVenueNavGraph
+import com.capstone.storyvenue.ui.theme.StoryVenueAppTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        val prefs = getSharedPreferences("storyvenue", MODE_PRIVATE)
+        val hasToken = prefs.getString("access_token", null) != null
+
         setContent {
-            Capstone_storyvenue_appTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
-                    )
-                }
+            StoryVenueAppTheme {
+                StoryVenueNavGraph(hasToken = hasToken)
             }
         }
     }
 }
-
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    Capstone_storyvenue_appTheme {
-        Greeting("Android")
-    }
-}
-// test
-// test 22
-//test final
