@@ -1,10 +1,9 @@
-package com.capstone.storyvenue.ui.screen
+package com.capstone.storyvenue.ui.screens.auth
 
 import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,7 +20,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.capstone.storyvenue.ui.theme.*
+import com.capstone.storyvenue.ui.theme.StoryVenueAppTheme
+import com.capstone.storyvenue.ui.theme.StoryVenueColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -152,7 +152,7 @@ fun ChapterDraftScreen(
                         text       = "이야기 초안",
                         fontSize   = 16.sp,
                         fontWeight = FontWeight.Medium,
-                        color      = TextPrimary
+                        color      = StoryVenueColors.OnSurface
                     )
                 },
                 navigationIcon = {
@@ -160,16 +160,16 @@ fun ChapterDraftScreen(
                         Icon(
                             imageVector        = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "뒤로가기",
-                            tint               = TextPrimary
+                            tint               = StoryVenueColors.OnSurface
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = BgPrimary
+                    containerColor = StoryVenueColors.Background
                 )
             )
         },
-        containerColor = BgPrimary
+        containerColor = StoryVenueColors.Background
     ) { innerPadding ->
 
         Column(
@@ -221,7 +221,7 @@ private fun DraftContent(draft: ChapterDraft) {
             text       = "이야기 ${draft.chapterNumber} : ${draft.title}\n이야기가 정리되었습니다!",
             fontSize   = 20.sp,
             fontWeight = FontWeight.Bold,
-            color      = AccentGreen,
+            color      = StoryVenueColors.Primary,
             lineHeight = 28.sp,
             modifier   = Modifier.padding(bottom = 20.dp)
         )
@@ -229,14 +229,14 @@ private fun DraftContent(draft: ChapterDraft) {
         // 본문 카드
         Card(
             shape  = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = BgSecondary),
+            colors = CardDefaults.cardColors(containerColor = StoryVenueColors.Surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(
                 text       = draft.content,
                 fontSize   = 15.sp,
-                color      = TextPrimary,
+                color      = StoryVenueColors.OnSurface,
                 lineHeight = 24.sp,
                 modifier   = Modifier
                     .fillMaxWidth()
@@ -254,12 +254,12 @@ private fun LoadingState() {
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator(color = AccentGreen)
+            CircularProgressIndicator(color = StoryVenueColors.Primary)
             Spacer(Modifier.height(16.dp))
             Text(
                 text     = "이야기를 생성하고 있어요...",
                 fontSize = 14.sp,
-                color    = TextSecondary
+                color    = StoryVenueColors.SubText
             )
         }
     }
@@ -278,11 +278,11 @@ private fun ErrorState(message: String, onRetry: () -> Unit) {
             Text(
                 text      = message,
                 fontSize  = 14.sp,
-                color     = AccentRed,
+                color     = StoryVenueColors.Error,
                 textAlign = TextAlign.Center
             )
             TextButton(onClick = onRetry) {
-                Text("다시 시도", color = AccentGreen)
+                Text("다시 시도", color = StoryVenueColors.Primary)
             }
         }
     }
@@ -305,10 +305,10 @@ private fun BottomButtons(
             enabled  = !isLoading,
             shape    = RoundedCornerShape(50.dp),
             colors   = ButtonDefaults.outlinedButtonColors(
-                containerColor         = BgSecondary,
-                contentColor           = TextPrimary,
-                disabledContainerColor = BgTertiary,
-                disabledContentColor   = TextSecondary
+                containerColor         = StoryVenueColors.Surface,
+                contentColor           = StoryVenueColors.OnSurface,
+                disabledContainerColor = StoryVenueColors.Divider,
+                disabledContentColor   = StoryVenueColors.SubText
             ),
             border = null,
             modifier = Modifier
@@ -328,10 +328,10 @@ private fun BottomButtons(
             enabled  = !isLoading,
             shape    = RoundedCornerShape(50.dp),
             colors   = ButtonDefaults.buttonColors(
-                containerColor         = AccentGreen,
+                containerColor         = StoryVenueColors.Primary,
                 contentColor           = Color.White,
-                disabledContainerColor = BgTertiary,
-                disabledContentColor   = TextSecondary
+                disabledContainerColor = StoryVenueColors.Divider,
+                disabledContentColor   = StoryVenueColors.SubText
             ),
             modifier = Modifier
                 .fillMaxWidth()
@@ -372,7 +372,7 @@ private suspend fun loadDraft(
 @Preview(showBackground = true, widthDp = 390, heightDp = 844)
 @Composable
 private fun ChapterDraftScreenPreview() {
-    com.capstone.storyvenue.ui.theme.Capstone_storyvenue_appTheme {
+    StoryVenueAppTheme {
         ChapterDraftScreen()
     }
 }

@@ -1,9 +1,8 @@
-package com.capstone.storyvenue.ui.screen
+package com.capstone.storyvenue.ui.screens.auth
 
 import android.util.Log
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -25,7 +24,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.capstone.storyvenue.ui.theme.*
+import com.capstone.storyvenue.ui.theme.StoryVenueAppTheme
+import com.capstone.storyvenue.ui.theme.StoryVenueColors
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Data model
@@ -94,7 +94,7 @@ fun BookPreviewScreen(
                         text       = bookTitle,
                         fontSize   = 18.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color      = TextPrimary
+                        color      = StoryVenueColors.OnSurface
                     )
                 },
                 navigationIcon = {
@@ -102,14 +102,14 @@ fun BookPreviewScreen(
                         Icon(
                             imageVector        = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "뒤로가기",
-                            tint               = TextPrimary
+                            tint               = StoryVenueColors.OnSurface
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = BgPrimary)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = StoryVenueColors.Background)
             )
         },
-        containerColor = BgPrimary
+        containerColor = StoryVenueColors.Background
     ) { innerPadding ->
 
         Column(
@@ -154,8 +154,8 @@ fun BookPreviewScreen(
                     },
                     shape  = RoundedCornerShape(50.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = BgSecondary,
-                        contentColor   = TextPrimary
+                        containerColor = StoryVenueColors.Surface,
+                        contentColor   = StoryVenueColors.OnSurface
                     ),
                     border   = null,
                     modifier = Modifier
@@ -177,7 +177,7 @@ fun BookPreviewScreen(
                     },
                     shape  = RoundedCornerShape(50.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = AccentGreen,
+                        containerColor = StoryVenueColors.Primary,
                         contentColor   = Color.White
                     ),
                     modifier = Modifier
@@ -210,7 +210,7 @@ private fun ChapterAccordionCard(
 
     Card(
         shape     = RoundedCornerShape(16.dp),
-        colors    = CardDefaults.cardColors(containerColor = BgSecondary),
+        colors    = CardDefaults.cardColors(containerColor = StoryVenueColors.Surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier  = Modifier
             .fillMaxWidth()
@@ -233,7 +233,7 @@ private fun ChapterAccordionCard(
                     text       = "이야기 ${chapter.number} : ${chapter.title}",
                     fontSize   = 17.sp,
                     fontWeight = FontWeight.Bold,
-                    color      = AccentGreen,
+                    color      = StoryVenueColors.Primary,
                     modifier   = Modifier.weight(1f)
                 )
 
@@ -251,7 +251,7 @@ private fun ChapterAccordionCard(
                         Icon(
                             imageVector        = Icons.Filled.KeyboardArrowDown,
                             contentDescription = "접기",
-                            tint               = AccentGreen,
+                            tint               = StoryVenueColors.Primary,
                             modifier           = Modifier.size(24.dp)
                         )
                     } else {
@@ -262,7 +262,7 @@ private fun ChapterAccordionCard(
                             Icon(
                                 imageVector        = Icons.AutoMirrored.Filled.ArrowForward,
                                 contentDescription = "챕터 보기",
-                                tint               = TextSecondary,
+                                tint               = StoryVenueColors.SubText,
                                 modifier           = Modifier.size(20.dp)
                             )
                         }
@@ -279,14 +279,14 @@ private fun ChapterAccordionCard(
                 Column {
                     Spacer(Modifier.height(12.dp))
                     HorizontalDivider(
-                        color     = BgTertiary,
+                        color     = StoryVenueColors.Divider,
                         thickness = 1.dp
                     )
                     Spacer(Modifier.height(12.dp))
                     Text(
                         text       = chapter.preview,
                         fontSize   = 14.sp,
-                        color      = TextSecondary,
+                        color      = StoryVenueColors.SubText,
                         lineHeight = 22.sp,
                         maxLines   = 4,
                         overflow   = TextOverflow.Ellipsis
@@ -304,7 +304,7 @@ private fun ChapterAccordionCard(
 @Preview(showBackground = true, widthDp = 390, heightDp = 844)
 @Composable
 private fun BookPreviewScreenPreview() {
-    com.capstone.storyvenue.ui.theme.Capstone_storyvenue_appTheme {
+    StoryVenueAppTheme {
         BookPreviewScreen()
     }
 }
