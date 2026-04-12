@@ -5,19 +5,19 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.capstone.storyvenue.ui.screens.auth.BookPreviewScreen
-import com.capstone.storyvenue.ui.screens.auth.ChapterDraftScreen
-import com.capstone.storyvenue.ui.screens.auth.ChatListScreen
-import com.capstone.storyvenue.ui.screens.auth.ChatRoomScreen
-import com.capstone.storyvenue.ui.screens.auth.FeedDetailScreen
-import com.capstone.storyvenue.ui.screens.auth.FeedScreen
-import com.capstone.storyvenue.ui.screens.auth.HomeScreen
-import com.capstone.storyvenue.ui.screens.auth.LoginScreen
-import com.capstone.storyvenue.ui.screens.auth.NotificationScreen
-import com.capstone.storyvenue.ui.screens.auth.ProfileScreen
-import com.capstone.storyvenue.ui.screens.auth.SignUpScreen
-import com.capstone.storyvenue.ui.screens.auth.SplashScreen
-import com.capstone.storyvenue.ui.screens.auth.VoiceInterviewScreen
+import com.capstone.storyvenue.ui.screens.BookPreviewScreen
+import com.capstone.storyvenue.ui.screens.ChapterDraftScreen
+import com.capstone.storyvenue.ui.screens.ChatListScreen
+import com.capstone.storyvenue.ui.screens.ChatRoomScreen
+import com.capstone.storyvenue.ui.screens.FeedDetailScreen
+import com.capstone.storyvenue.ui.screens.FeedScreen
+import com.capstone.storyvenue.ui.screens.HomeScreen
+import com.capstone.storyvenue.ui.screens.LoginScreen
+import com.capstone.storyvenue.ui.screens.NotificationScreen
+import com.capstone.storyvenue.ui.screens.ProfileScreen
+import com.capstone.storyvenue.ui.screens.SignUpScreen
+import com.capstone.storyvenue.ui.screens.SplashScreen
+import com.capstone.storyvenue.ui.screens.VoiceInterviewScreen
 
 object Routes {
     const val SPLASH          = "splash"
