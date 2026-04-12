@@ -80,14 +80,13 @@ fun StoryVenueNavGraph(
         composable(Routes.CHAPTER_DRAFT) {
             ChapterDraftScreen(
                 onBack = { navController.popBackStack() },
-                onRegenerate = { navController.popBackStack() },
                 onAddToBook = { navController.navigate(Routes.BOOK_PREVIEW) },
             )
         }
         composable(Routes.BOOK_PREVIEW) {
             BookPreviewScreen(
                 onBack = { navController.popBackStack() },
-                onMoreInterview = { navController.navigate(Routes.VOICE_INTERVIEW) },
+                onAddChapter = { navController.navigate(Routes.VOICE_INTERVIEW) },
                 onPostToFeed = { navController.navigate(Routes.FEED) },
             )
         }
