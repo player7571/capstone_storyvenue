@@ -1,16 +1,11 @@
 package com.capstone.storyvenue
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import com.capstone.storyvenue.ui.screen.ChapterDraftScreen
 import com.capstone.storyvenue.ui.theme.Capstone_storyvenue_appTheme
 
 class MainActivity : ComponentActivity() {
@@ -19,32 +14,16 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             Capstone_storyvenue_appTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
-                    )
-                }
+                // 챕터 초안 화면 — 추후 NavHost 연결 시 여기에 Navigation 추가
+                ChapterDraftScreen(
+                    sessionId     = "demo-session",
+                    chapterNumber = 3,
+                    onBack        = { Log.d("Nav", "뒤로가기") },
+                    onAddToBook   = { draft ->
+                        Log.d("Nav", "책에 추가: ${draft.title}")
+                    }
+                )
             }
         }
     }
 }
-
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    Capstone_storyvenue_appTheme {
-        Greeting("Android")
-    }
-}
-// test
-// test 22
-//test final
