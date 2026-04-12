@@ -1,4 +1,4 @@
-package com.capstone.storyvenue.ui.screens.auth
+package com.capstone.storyvenue.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border

@@ -1,4 +1,4 @@
-package com.capstone.storyvenue.ui.screens.auth
+package com.capstone.storyvenue.ui.screens
 
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat

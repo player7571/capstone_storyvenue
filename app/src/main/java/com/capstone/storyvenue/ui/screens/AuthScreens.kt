@@ -1,4 +1,4 @@
-package com.capstone.storyvenue.ui.screens.auth
+package com.capstone.storyvenue.ui.screens
 
 import android.app.Activity
 import android.content.Context

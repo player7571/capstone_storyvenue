@@ -1,4 +1,4 @@
-package com.capstone.storyvenue.ui.screens.auth
+package com.capstone.storyvenue.ui.screens
 
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
