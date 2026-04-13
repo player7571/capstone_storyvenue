@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import auth, book, chat, chapters, feed, health, memory, messages, safety, sessions, users, voice
+from app.api.routes import auth, book, chat, chapters, comments, feed, health, memory, messages, notifications, safety, sessions, users, voice
 
 app = FastAPI(title="StoryVenue API", version="0.1.0")
 AUDIO_CACHE_DIR = Path(__file__).resolve().parents[1] / ".generated-audio"
@@ -30,6 +30,8 @@ app.include_router(messages.router)
 app.include_router(sessions.router)
 app.include_router(voice.router)
 app.include_router(feed.router)
+app.include_router(comments.router)
+app.include_router(notifications.router)
 app.include_router(memory.router)
 app.include_router(chat.router)
 app.include_router(safety.router)
