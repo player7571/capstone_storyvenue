@@ -42,6 +42,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,7 +59,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.capstone.storyvenue.ui.theme.SBAggroFamily
 import com.capstone.storyvenue.ui.theme.StoryVenueColors
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class ButtonVariant { Primary, Accent, Secondary }
 
@@ -248,7 +252,10 @@ fun LoginScreen(
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     Box(modifier = Modifier.fillMaxSize().background(StoryVenueColors.Background).imePadding()) {
         Column(
@@ -269,23 +276,45 @@ fun LoginScreen(
             Spacer(Modifier.height(48.dp))
             StoryTextField(
                 value = email,
-                onValueChange = { email = it },
+                onValueChange = { email = it; errorMessage = null },
                 label = "이메일",
                 keyboardType = KeyboardType.Email,
             )
             Spacer(Modifier.height(20.dp))
             StoryTextField(
                 value = password,
-                onValueChange = { password = it },
+                onValueChange = { password = it; errorMessage = null },
                 label = "비밀번호",
                 isPassword = true,
+                errorMessage = errorMessage,
             )
             Spacer(Modifier.height(28.dp))
             StoryButton(
                 text = "로그인",
+                isLoading = isLoading,
                 onClick = {
-                    // 임시: 서버 없이 바로 홈으로 이동
-                    onLoginSuccess()
+                    if (email.isBlank() || password.isBlank()) {
+                        errorMessage = "이메일과 비밀번호를 입력해주세요"
+                        return@StoryButton
+                    }
+                    isLoading = true
+                    errorMessage = null
+                    scope.launch(Dispatchers.IO) {
+                        val result = ApiService.login(email, password)
+                        withContext(Dispatchers.Main) {
+                            isLoading = false
+                            result.onSuccess { (token, userId) ->
+                                context.getSharedPreferences("storyvenue", Activity.MODE_PRIVATE)
+                                    .edit()
+                                    .putString("access_token", token)
+                                    .putString("user_id", userId)
+                                    .apply()
+                                onLoginSuccess()
+                            }.onFailure { e ->
+                                errorMessage = e.message
+                            }
+                        }
+                    }
                 },
             )
             Spacer(Modifier.height(20.dp))
@@ -314,6 +343,9 @@ fun SignUpScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordConfirm by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+    var serverError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     val emailError = if (email.isNotBlank() && !email.contains("@")) "올바른 이메일을 입력해주세요!" else null
     val passwordError = if (password.isNotBlank() && password.length < 6) "비밀번호는 6자 이상이어야 합니다" else null
@@ -385,10 +417,31 @@ fun SignUpScreen(
                 isPassword = true,
                 errorMessage = passwordConfirmError,
             )
+            if (serverError != null) {
+                Spacer(Modifier.height(8.dp))
+                Text(text = serverError!!, color = StoryVenueColors.Error, fontSize = 13.sp, fontFamily = SBAggroFamily)
+            }
             Spacer(Modifier.height(32.dp))
             StoryButton(
                 text = "회원가입",
-                onClick = { onSignUpSuccess() },
+                isLoading = isLoading,
+                onClick = {
+                    if (name.isBlank() || email.isBlank() || password.isBlank()) {
+                        serverError = "모든 항목을 입력해주세요"
+                        return@StoryButton
+                    }
+                    if (emailError != null || passwordError != null || passwordConfirmError != null) return@StoryButton
+                    isLoading = true
+                    serverError = null
+                    scope.launch(Dispatchers.IO) {
+                        val result = ApiService.signup(name, email, password)
+                        withContext(Dispatchers.Main) {
+                            isLoading = false
+                            result.onSuccess { onSignUpSuccess() }
+                                .onFailure { e -> serverError = e.message }
+                        }
+                    }
+                },
             )
             Spacer(Modifier.height(20.dp))
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {

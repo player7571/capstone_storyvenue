@@ -32,6 +32,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,17 +41,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.capstone.storyvenue.ui.theme.SBAggroFamily
 import com.capstone.storyvenue.ui.theme.StoryVenueColors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
-    userName: String = "김철수",
-    userEmail: String = "kimcs@email.com",
     onLogout: () -> Unit = {},
     onNotificationClick: () -> Unit = {},
     onMyPosts: () -> Unit = {},
@@ -60,7 +62,22 @@ fun ProfileScreen(
     onFeedClick: () -> Unit = {},
     onChatClick: () -> Unit = {},
 ) {
+    val context = LocalContext.current
+    val prefs = context.getSharedPreferences("storyvenue", android.content.Context.MODE_PRIVATE)
+    val token = prefs.getString("access_token", "") ?: ""
+
+    var userName by remember { mutableStateOf("") }
+    var userEmail by remember { mutableStateOf("") }
     var showLogoutDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            ApiService.getProfile(token).onSuccess {
+                userName = it.name
+                userEmail = it.email
+            }
+        }
+    }
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -81,6 +98,7 @@ fun ProfileScreen(
             confirmButton = {
                 TextButton(onClick = {
                     showLogoutDialog = false
+                    prefs.edit().clear().apply()
                     onLogout()
                 }) {
                     Text(

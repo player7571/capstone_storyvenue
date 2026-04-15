@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -28,15 +29,25 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.capstone.storyvenue.ui.theme.SBAggroFamily
 import com.capstone.storyvenue.ui.theme.StoryVenueColors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class NotificationItem(
     val id: String,
@@ -53,36 +64,22 @@ data class NotificationItem(
 fun NotificationScreen(
     onBack: () -> Unit = {},
     onNotificationClick: (NotificationItem) -> Unit = {},
-    notifications: List<NotificationItem> = listOf(
-        NotificationItem(
-            id = "1",
-            actorName = "이영희",
-            message = "회원님의 글에 댓글을 남겼습니다.",
-            commentPreview = "\"정말 감동적인 이야기네요!\"",
-            timeAgo = "1시간 전",
-            isRead = false,
-            type = "comment",
-        ),
-        NotificationItem(
-            id = "2",
-            actorName = "박영수",
-            message = "회원님의 글을 좋아합니다.",
-            commentPreview = null,
-            timeAgo = "2시간 전",
-            isRead = true,
-            type = "like",
-        ),
-        NotificationItem(
-            id = "3",
-            actorName = "김민준",
-            message = "회원님의 글에 댓글을 남겼습니다.",
-            commentPreview = "\"다음 이야기도 기대됩니다!\"",
-            timeAgo = "3시간 전",
-            isRead = true,
-            type = "comment",
-        ),
-    ),
 ) {
+    val context = LocalContext.current
+    val token = context.getSharedPreferences("storyvenue", android.content.Context.MODE_PRIVATE)
+        .getString("access_token", "") ?: ""
+    val scope = rememberCoroutineScope()
+
+    var notifications by remember { mutableStateOf<List<NotificationItem>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            ApiService.getNotifications(token).onSuccess { notifications = it }
+        }
+        isLoading = false
+    }
+
     Scaffold(
         containerColor = StoryVenueColors.Background,
         topBar = {
@@ -111,7 +108,11 @@ fun NotificationScreen(
             )
         }
     ) { innerPadding ->
-        if (notifications.isEmpty()) {
+        if (isLoading) {
+            Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = StoryVenueColors.Primary)
+            }
+        } else if (notifications.isEmpty()) {
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -138,7 +139,18 @@ fun NotificationScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onNotificationClick(notification) },
+                            .clickable {
+                                // 읽음 처리
+                                if (!notification.isRead) {
+                                    scope.launch(Dispatchers.IO) {
+                                        ApiService.markNotificationRead(token, notification.id)
+                                    }
+                                    notifications = notifications.map {
+                                        if (it.id == notification.id) it.copy(isRead = true) else it
+                                    }
+                                }
+                                onNotificationClick(notification)
+                            },
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = if (!notification.isRead)
@@ -154,7 +166,6 @@ fun NotificationScreen(
                                 .padding(16.dp),
                             verticalAlignment = Alignment.Top,
                         ) {
-                            // 프로필 아바타
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier

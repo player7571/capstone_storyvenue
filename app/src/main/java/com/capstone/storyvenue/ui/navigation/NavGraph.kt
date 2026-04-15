@@ -102,6 +102,7 @@ fun StoryVenueNavGraph(
         composable(Routes.FEED_DETAIL) { back ->
             val postId = back.arguments?.getString("postId") ?: ""
             FeedDetailScreen(
+                postId = postId,
                 onBack = { navController.popBackStack() },
                 onChatClick = { navController.navigate(Routes.CHAT_LIST) },
             )
@@ -118,6 +119,7 @@ fun StoryVenueNavGraph(
         composable(Routes.CHAT_ROOM) { back ->
             val userId = back.arguments?.getString("userId") ?: ""
             ChatRoomScreen(
+                otherUserId = userId,
                 onBack = { navController.popBackStack() },
             )
         }
