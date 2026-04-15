@@ -15,7 +15,7 @@ def _get_profile_or_404(user_id: str) -> dict:
     result = (
         get_supabase_service_client()
         .table("profiles")
-        .select("id, name, email, notification_enabled, created_at")
+        .select("id, name, email, created_at")
         .eq("id", user_id)
         .maybe_single()
         .execute()

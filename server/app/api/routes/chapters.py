@@ -76,14 +76,14 @@ def _get_user_name(user_id: str) -> str:
         result = (
             get_supabase()
             .table("profiles")
-            .select("display_name")
+            .select("name")
             .eq("id", user_id)
             .maybe_single()
             .execute()
         )
-        display_name = (result.data or {}).get("display_name")
-        if display_name:
-            return str(display_name).strip()
+        user_name = (result.data or {}).get("name")
+        if user_name:
+            return str(user_name).strip()
     except Exception:
         pass
 

@@ -100,7 +100,6 @@ def signup(payload: SignupRequest) -> SignupResponse:
                     "id": str(user.id),
                     "name": payload.name,
                     "email": payload.email,
-                    "notification_enabled": True,
                 },
                 on_conflict="id",
             )

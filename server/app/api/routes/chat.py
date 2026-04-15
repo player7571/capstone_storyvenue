@@ -65,16 +65,16 @@ async def list_chat_partners(
 
     # 프로필 이름 조회
     partner_ids = list(partners.keys())
-    display_names: dict[str, str | None] = {}
+    names: dict[str, str | None] = {}
     if partner_ids:
         profiles = (
             sb.table("profiles")
-            .select("id, display_name")
+            .select("id, name")
             .in_("id", partner_ids)
             .execute()
         )
         for p in profiles.data:
-            display_names[p["id"]] = p.get("display_name")
+            names[p["id"]] = p.get("name")
 
     # 마지막 메시지 시간 기준 정렬
     result = []
@@ -82,7 +82,7 @@ async def list_chat_partners(
         result.append(
             ChatPartnerResponse(
                 user_id=pid,
-                display_name=display_names.get(pid),
+                name=names.get(pid),
                 last_message=info["last_message"],
                 last_message_at=info["last_message_at"],
                 unread_count=info["unread_count"],
