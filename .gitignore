@@ -15,6 +15,7 @@ venv/
 .gradle/
 local.properties
 .idea/
+app/.idea/
 *.keystore
 build/
 app/build/
