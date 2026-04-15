@@ -129,6 +129,16 @@ async def toggle_like(
         .execute()
     )
 
+    # 게시물 작성자 확인 (알림용)
+    post_result = (
+        sb.table("feed_posts")
+        .select("user_id")
+        .eq("id", post_id_str)
+        .maybe_single()
+        .execute()
+    )
+    post_author_id = post_result.data["user_id"] if post_result.data else None
+
     if existing.data:
         # 좋아요 취소
         sb.table("feed_likes").delete().eq("id", existing.data["id"]).execute()
@@ -145,6 +155,19 @@ async def toggle_like(
             {"like_count": sb.table("feed_posts").select("like_count").eq("id", post_id_str).single().execute().data["like_count"] + 1}
         ).eq("id", post_id_str).execute()
         liked = True
+
+        # 좋아요 알림 생성 (본인 글이면 제외, 취소 시 생성 안 함)
+        if post_author_id and post_author_id != user_id:
+            sb.table("notifications").insert(
+                {
+                    "user_id": post_author_id,
+                    "type": "like",
+                    "actor_id": user_id,
+                    "post_id": post_id_str,
+                    "message": "회원님의 글을 좋아합니다",
+                    "is_read": False,
+                }
+            ).execute()
 
     # 최종 like_count 반환
     post = (
