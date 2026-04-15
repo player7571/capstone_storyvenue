@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace = "com.capstone.storyvenue"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.capstone.storyvenue"
         minSdk = 24
-        targetSdk = 36
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 
