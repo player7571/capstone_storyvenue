@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,21 +36,27 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.capstone.storyvenue.ui.theme.SBAggroFamily
 import com.capstone.storyvenue.ui.theme.StoryVenueColors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class ChatPartner(
     val userId: String,
@@ -71,17 +78,26 @@ data class ChatMessage(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatListScreen(
-    partners: List<ChatPartner> = listOf(
-        ChatPartner("1", "김철수", "안녕하세요! 글 잘 읽었어요", "오후 3:42"),
-        ChatPartner("2", "이영희", "감사합니다~", "오전 11:20"),
-        ChatPartner("3", "박지민", "혹시 다음 이야기도 올리...", "어제"),
-    ),
     onPartnerClick: (ChatPartner) -> Unit = {},
     onNotificationClick: () -> Unit = {},
     onHomeClick: () -> Unit = {},
     onFeedClick: () -> Unit = {},
     onProfileClick: () -> Unit = {},
 ) {
+    val context = LocalContext.current
+    val token = context.getSharedPreferences("storyvenue", android.content.Context.MODE_PRIVATE)
+        .getString("access_token", "") ?: ""
+
+    var partners by remember { mutableStateOf<List<ChatPartner>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            ApiService.getChatPartners(token).onSuccess { partners = it }
+        }
+        isLoading = false
+    }
+
     Scaffold(
         containerColor = StoryVenueColors.Background,
         topBar = {
@@ -118,7 +134,11 @@ fun ChatListScreen(
             )
         }
     ) { innerPadding ->
-        if (partners.isEmpty()) {
+        if (isLoading) {
+            Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = StoryVenueColors.Primary)
+            }
+        } else if (partners.isEmpty()) {
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -217,19 +237,37 @@ fun ChatListScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatRoomScreen(
-    partnerName: String = "김철수",
+    otherUserId: String = "",
+    partnerName: String = "",
     onBack: () -> Unit = {},
 ) {
-    val messages = remember {
-        mutableStateListOf(
-            ChatMessage("1", "안녕하세요! 글 잘 읽었어요", false, "오후 3:42"),
-            ChatMessage("2", "감사합니다!", true, "오후 3:42"),
-            ChatMessage("3", "혹시 다음 이야기는 언제 올리시나요?", false, "오후 3:45"),
-            ChatMessage("4", "이번 주 안에 올릴 예정이에요!", true, "오후 3:46"),
-        )
-    }
+    val context = LocalContext.current
+    val prefs = context.getSharedPreferences("storyvenue", android.content.Context.MODE_PRIVATE)
+    val token = prefs.getString("access_token", "") ?: ""
+    val myUserId = prefs.getString("user_id", "") ?: ""
+    val scope = rememberCoroutineScope()
+
+    val messages = remember { mutableStateListOf<ChatMessage>() }
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    var isLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(otherUserId) {
+        withContext(Dispatchers.IO) {
+            ApiService.getMessages(token, otherUserId).onSuccess { data ->
+                messages.clear()
+                messages.addAll(data.map { msg ->
+                    ChatMessage(
+                        id = msg.id,
+                        content = msg.content,
+                        isMine = msg.senderId == myUserId,
+                        time = msg.timeAgo,
+                    )
+                })
+            }
+        }
+        isLoading = false
+    }
 
     Scaffold(
         containerColor = StoryVenueColors.Background,
@@ -237,7 +275,7 @@ fun ChatRoomScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = partnerName,
+                        text = partnerName.ifBlank { "채팅" },
                         fontWeight = FontWeight.Bold,
                         color = StoryVenueColors.OnSurface,
                         fontFamily = SBAggroFamily,
@@ -290,15 +328,20 @@ fun ChatRoomScreen(
                 IconButton(
                     onClick = {
                         if (inputText.isNotBlank()) {
-                            messages.add(
-                                ChatMessage(
-                                    id = messages.size.toString(),
-                                    content = inputText,
-                                    isMine = true,
-                                    time = "방금",
-                                )
-                            )
+                            val text = inputText
                             inputText = ""
+                            scope.launch(Dispatchers.IO) {
+                                ApiService.sendMessage(token, otherUserId, text).onSuccess { msg ->
+                                    messages.add(
+                                        ChatMessage(
+                                            id = msg.id,
+                                            content = msg.content,
+                                            isMine = true,
+                                            time = "방금",
+                                        )
+                                    )
+                                }
+                            }
                         }
                     }
                 ) {
@@ -311,19 +354,25 @@ fun ChatRoomScreen(
             }
         }
     ) { innerPadding ->
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 16.dp),
-        ) {
-            item { Spacer(Modifier.height(8.dp)) }
-            items(messages) { message ->
-                ChatBubble(message = message)
-                Spacer(Modifier.height(8.dp))
+        if (isLoading) {
+            Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = StoryVenueColors.Primary)
             }
-            item { Spacer(Modifier.height(8.dp)) }
+        } else {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(horizontal = 16.dp),
+            ) {
+                item { Spacer(Modifier.height(8.dp)) }
+                items(messages.toList()) { message ->
+                    ChatBubble(message = message)
+                    Spacer(Modifier.height(8.dp))
+                }
+                item { Spacer(Modifier.height(8.dp)) }
+            }
         }
     }
 }

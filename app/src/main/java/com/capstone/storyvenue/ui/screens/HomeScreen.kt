@@ -26,15 +26,23 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.capstone.storyvenue.ui.theme.SBAggroFamily
 import com.capstone.storyvenue.ui.theme.StoryVenueColors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class InterviewSession(
     val id: String,
@@ -45,12 +53,6 @@ data class InterviewSession(
 
 @Composable
 fun HomeScreen(
-    userName: String = "이름",
-    sessions: List<InterviewSession> = listOf(
-        InterviewSession("1", 3, "2026.03.28", "\"어린 시절 이야기\""),
-        InterviewSession("2", 2, "2026.03.28", "\"첫 직장\""),
-        InterviewSession("3", 1, "2026.03.28", "\"대학 생활\""),
-    ),
     onNewInterview: () -> Unit = {},
     onSessionClick: (InterviewSession) -> Unit = {},
     onNotificationClick: () -> Unit = {},
@@ -58,6 +60,19 @@ fun HomeScreen(
     onChatClick: () -> Unit = {},
     onProfileClick: () -> Unit = {},
 ) {
+    val context = LocalContext.current
+    val prefs = context.getSharedPreferences("storyvenue", android.content.Context.MODE_PRIVATE)
+    val token = prefs.getString("access_token", "") ?: ""
+
+    var userName by remember { mutableStateOf("이름") }
+    var sessions by remember { mutableStateOf<List<InterviewSession>>(emptyList()) }
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            ApiService.getProfile(token).onSuccess { userName = it.name.ifBlank { "이름" } }
+            ApiService.getSessions(token).onSuccess { sessions = it }
+        }
+    }
     Scaffold(
         containerColor = StoryVenueColors.Background,
         bottomBar = {

@@ -25,7 +25,7 @@ async def list_feed(
     sb = get_supabase()
     result = (
         sb.table("feed_posts")
-        .select("*, profiles(display_name)")
+        .select("*, profiles(name)")
         .order("created_at", desc=True)
         .range(offset, offset + limit - 1)
         .execute()
@@ -36,7 +36,7 @@ async def list_feed(
         posts.append(
             FeedPostResponse(
                 **row,
-                author_name=profile.get("display_name") if profile else None,
+                author_name=profile.get("name") if profile else None,
             )
         )
     return posts
@@ -82,7 +82,7 @@ async def get_feed_post(
     sb = get_supabase()
     result = (
         sb.table("feed_posts")
-        .select("*, profiles(display_name)")
+        .select("*, profiles(name)")
         .eq("id", str(post_id))
         .maybe_single()
         .execute()
@@ -105,7 +105,7 @@ async def get_feed_post(
 
     return FeedDetailResponse(
         **row,
-        author_name=profile.get("display_name") if profile else None,
+        author_name=profile.get("name") if profile else None,
         liked_by_me=like_result.data is not None,
     )
 
