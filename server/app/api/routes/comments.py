@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from app.api.dependencies.auth import get_current_user_id
 from app.api.schemas.comments import CommentCreateRequest, CommentResponse
 from app.db.supabase import get_supabase
+from app.services.safety import check_content_safety
 
 router = APIRouter(tags=["comments"])
 
@@ -61,6 +62,14 @@ async def create_comment(
     )
     if not post.data:
         raise HTTPException(status_code=404, detail="게시물을 찾을 수 없습니다.")
+
+    # 안전 검사
+    safety = check_content_safety(body.content)
+    if not safety["safe"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"부적절한 콘텐츠가 감지되었습니다: {safety['reason']}",
+        )
 
     # 댓글 저장
     row = (
