@@ -9,6 +9,7 @@ from app.api.schemas.chat import (
     MessageResponse,
 )
 from app.db.supabase import get_supabase
+from app.services.safety import check_content_safety
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -148,6 +149,14 @@ async def send_message(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="자기 자신에게 메시지를 보낼 수 없습니다.",
+        )
+
+    # 안전 검사
+    safety = check_content_safety(body.content)
+    if not safety["safe"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"부적절한 콘텐츠가 감지되었습니다: {safety['reason']}",
         )
 
     row = (
