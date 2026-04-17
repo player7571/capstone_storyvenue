@@ -26,6 +26,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import com.capstone.storyvenue.ui.theme.SBAggroFamily
 import com.capstone.storyvenue.ui.theme.StoryVenueColors
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -66,16 +68,30 @@ fun ProfileScreen(
     val prefs = context.getSharedPreferences("storyvenue", android.content.Context.MODE_PRIVATE)
     val token = prefs.getString("access_token", "") ?: ""
 
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     var userName by remember { mutableStateOf("") }
     var userEmail by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var infoMessage by remember { mutableStateOf<String?>(null) }
     var showLogoutDialog by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var editName by remember { mutableStateOf("") }
+    var isSavingEdit by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var isDeleting by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            ApiService.getProfile(token).onSuccess {
-                userName = it.name
-                userEmail = it.email
-            }
+    LaunchedEffect(token) {
+        if (token.isBlank()) {
+            errorMessage = "로그인이 필요합니다."
+            return@LaunchedEffect
+        }
+        val result = withContext(Dispatchers.IO) { ApiService.getProfile(token) }
+        result.onSuccess {
+            userName = it.name
+            userEmail = it.email
+            editName = it.name
+        }.onFailure { e ->
+            errorMessage = e.message ?: "프로필을 불러오지 못했습니다."
         }
     }
 
@@ -111,6 +127,149 @@ fun ProfileScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showLogoutDialog = false }) {
+                    Text(
+                        text = "취소",
+                        color = StoryVenueColors.SubText,
+                        fontFamily = SBAggroFamily,
+                    )
+                }
+            },
+            containerColor = StoryVenueColors.Background,
+        )
+    }
+
+    if (showEditDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isSavingEdit) showEditDialog = false },
+            title = {
+                Text(
+                    text = "프로필 수정",
+                    fontFamily = SBAggroFamily,
+                    fontWeight = FontWeight.Bold,
+                )
+            },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = editName,
+                        onValueChange = { editName = it },
+                        label = { Text("이름", fontFamily = SBAggroFamily) },
+                        singleLine = true,
+                    )
+                    if (!errorMessage.isNullOrBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = errorMessage ?: "",
+                            color = StoryVenueColors.Error,
+                            fontFamily = SBAggroFamily,
+                            fontSize = 13.sp,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val nextName = editName.trim()
+                        if (nextName.isBlank()) {
+                            errorMessage = "이름을 입력해주세요."
+                            return@TextButton
+                        }
+                        isSavingEdit = true
+                        errorMessage = null
+                        scope.launch {
+                            val result = withContext(Dispatchers.IO) {
+                                ApiService.updateProfileName(token, nextName)
+                            }
+                            isSavingEdit = false
+                            result.onSuccess {
+                                userName = it.name
+                                userEmail = it.email
+                                showEditDialog = false
+                                infoMessage = "프로필이 수정되었습니다."
+                            }.onFailure { e ->
+                                errorMessage = e.message ?: "프로필 수정에 실패했습니다."
+                            }
+                        }
+                    },
+                    enabled = !isSavingEdit,
+                ) {
+                    Text(
+                        text = if (isSavingEdit) "저장 중..." else "저장",
+                        color = StoryVenueColors.Primary,
+                        fontFamily = SBAggroFamily,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showEditDialog = false
+                        errorMessage = null
+                    },
+                    enabled = !isSavingEdit,
+                ) {
+                    Text(
+                        text = "취소",
+                        color = StoryVenueColors.SubText,
+                        fontFamily = SBAggroFamily,
+                    )
+                }
+            },
+            containerColor = StoryVenueColors.Background,
+        )
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isDeleting) showDeleteDialog = false },
+            title = {
+                Text(
+                    text = "회원탈퇴",
+                    fontFamily = SBAggroFamily,
+                    fontWeight = FontWeight.Bold,
+                )
+            },
+            text = {
+                Text(
+                    text = "계정을 삭제하면 복구할 수 없습니다. 정말 탈퇴하시겠어요?",
+                    fontFamily = SBAggroFamily,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        isDeleting = true
+                        errorMessage = null
+                        scope.launch {
+                            val result = withContext(Dispatchers.IO) { ApiService.deleteMe(token) }
+                            isDeleting = false
+                            result.onSuccess {
+                                prefs.edit().clear().apply()
+                                showDeleteDialog = false
+                                onLogout()
+                            }.onFailure { e ->
+                                errorMessage = e.message ?: "회원탈퇴 처리에 실패했습니다."
+                                showDeleteDialog = false
+                            }
+                        }
+                    },
+                    enabled = !isDeleting,
+                ) {
+                    Text(
+                        text = if (isDeleting) "처리 중..." else "탈퇴하기",
+                        color = StoryVenueColors.Error,
+                        fontFamily = SBAggroFamily,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDeleteDialog = false },
+                    enabled = !isDeleting,
+                ) {
                     Text(
                         text = "취소",
                         color = StoryVenueColors.SubText,
@@ -205,15 +364,47 @@ fun ProfileScreen(
                 fontWeight = FontWeight.Bold,
             )
 
+            if (!errorMessage.isNullOrBlank()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = errorMessage ?: "",
+                    fontSize = 13.sp,
+                    color = StoryVenueColors.Error,
+                    fontFamily = SBAggroFamily,
+                )
+            }
+
+            if (!infoMessage.isNullOrBlank()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = infoMessage ?: "",
+                    fontSize = 13.sp,
+                    color = StoryVenueColors.Primary,
+                    fontFamily = SBAggroFamily,
+                )
+            }
+
             Spacer(Modifier.height(32.dp))
 
             ProfileMenuItem(text = "내가 쓴 글", onClick = onMyPosts, textColor = StoryVenueColors.Primary)
             Spacer(Modifier.height(12.dp))
             ProfileMenuItem(text = "좋아요한 글", onClick = onLikedPosts, textColor = StoryVenueColors.Primary)
             Spacer(Modifier.height(12.dp))
-            ProfileMenuItem(text = "프로필 수정", onClick = onEditProfile, textColor = StoryVenueColors.Primary)
+            ProfileMenuItem(
+                text = "프로필 수정",
+                onClick = {
+                    onEditProfile()
+                    editName = userName
+                    infoMessage = null
+                    errorMessage = null
+                    showEditDialog = true
+                },
+                textColor = StoryVenueColors.Primary,
+            )
             Spacer(Modifier.height(12.dp))
             ProfileMenuItem(text = "로그아웃", onClick = { showLogoutDialog = true }, textColor = StoryVenueColors.Accent)
+            Spacer(Modifier.height(12.dp))
+            ProfileMenuItem(text = "회원탈퇴", onClick = { showDeleteDialog = true }, textColor = StoryVenueColors.Error)
 
             Spacer(Modifier.height(32.dp))
         }

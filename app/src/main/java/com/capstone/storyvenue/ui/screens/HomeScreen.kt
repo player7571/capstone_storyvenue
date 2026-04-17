@@ -67,12 +67,21 @@ fun HomeScreen(
 
     var userName by remember { mutableStateOf("이름") }
     var sessions by remember { mutableStateOf<List<InterviewSession>>(emptyList()) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            ApiService.getProfile(token).onSuccess { userName = it.name.ifBlank { "이름" } }
-            ApiService.getSessions(token).onSuccess { sessions = it }
+    LaunchedEffect(token) {
+        if (token.isBlank()) {
+            errorMessage = "로그인이 필요합니다."
+            return@LaunchedEffect
         }
+
+        val profileResult = withContext(Dispatchers.IO) { ApiService.getProfile(token) }
+        profileResult.onSuccess { userName = it.name.ifBlank { "이름" } }
+            .onFailure { e -> errorMessage = e.message ?: "프로필을 불러오지 못했습니다." }
+
+        val sessionsResult = withContext(Dispatchers.IO) { ApiService.getSessions(token) }
+        sessionsResult.onSuccess { sessions = it }
+            .onFailure { e -> errorMessage = e.message ?: "세션 목록을 불러오지 못했습니다." }
     }
     Scaffold(
         containerColor = StoryVenueColors.Background,
@@ -114,6 +123,15 @@ fun HomeScreen(
                             modifier = Modifier.size(28.dp),
                         )
                     }
+                }
+                if (!errorMessage.isNullOrBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = errorMessage ?: "",
+                        fontSize = 13.sp,
+                        color = StoryVenueColors.Error,
+                        fontFamily = SBAggroFamily,
+                    )
                 }
                 Spacer(Modifier.height(20.dp))
             }
