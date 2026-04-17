@@ -1,6 +1,8 @@
 package com.capstone.storyvenue.ui.screens
 
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -8,7 +10,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
 import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 
 object ApiService {
@@ -16,6 +17,7 @@ object ApiService {
     private const val BASE_URL = "http://10.0.2.2:8000"
     private val client = OkHttpClient()
     private val JSON_TYPE = "application/json; charset=utf-8".toMediaType()
+    private val DEFAULT_BINARY = "application/octet-stream".toMediaType()
 
     // ── 시간 포맷 헬퍼 ──────────────────────────────
     private fun timeAgo(isoString: String?): String {
@@ -60,6 +62,32 @@ object ApiService {
             .addHeader("Authorization", "Bearer $token")
             .delete().build()
 
+    private fun parseErrorMessage(body: String, fallback: String): String {
+        if (body.isBlank()) return fallback
+        return try {
+            val json = JSONObject(body)
+            val detail = json.optString("detail", "").trim()
+            val message = json.optString("message", "").trim()
+            when {
+                detail.isNotEmpty() -> detail
+                message.isNotEmpty() -> message
+                else -> fallback
+            }
+        } catch (_: Exception) {
+            fallback
+        }
+    }
+
+    private fun JSONObject.optCleanString(name: String): String {
+        if (!has(name) || isNull(name)) return ""
+        return optString(name, "").takeUnless { it == "null" } ?: ""
+    }
+
+    private fun toAbsoluteUrl(pathOrUrl: String): String {
+        if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) return pathOrUrl
+        return if (pathOrUrl.startsWith("/")) "$BASE_URL$pathOrUrl" else "$BASE_URL/$pathOrUrl"
+    }
+
     // ── Auth ─────────────────────────────────────────
     fun login(email: String, password: String): Result<Pair<String, String>> {
         return try {
@@ -82,7 +110,7 @@ object ApiService {
                 val userId = json.getString("user_id")
                 Result.success(Pair(token, userId))
             } else {
-                val detail = json.optString("detail", "로그인에 실패했습니다")
+                val detail = parseErrorMessage(responseBody, "로그인에 실패했습니다")
                 Result.failure(Exception(detail))
             }
         } catch (e: Exception) {
@@ -110,7 +138,7 @@ object ApiService {
             if (response.isSuccessful) {
                 Result.success(json.optString("message", "회원가입 성공"))
             } else {
-                val detail = json.optString("detail", "회원가입에 실패했습니다")
+                val detail = parseErrorMessage(responseBody, "회원가입에 실패했습니다")
                 Result.failure(Exception(detail))
             }
         } catch (e: Exception) {
@@ -128,12 +156,55 @@ object ApiService {
                 Result.success(
                     ProfileData(
                         id = json.getString("id"),
-                        name = json.optString("name", ""),
-                        email = json.optString("email", ""),
+                        name = json.optCleanString("name"),
+                        email = json.optCleanString("email"),
                     )
                 )
             } else {
-                Result.failure(Exception(json.optString("detail", "프로필 조회 실패")))
+                Result.failure(Exception(parseErrorMessage(body, "프로필 조회 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun updateProfileName(token: String, name: String): Result<ProfileData> {
+        return try {
+            val payload = JSONObject().apply { put("name", name) }.toString()
+            val response = client.newCall(
+                authPut("$BASE_URL/users/me", token, payload)
+            ).execute()
+            val body = response.body?.string() ?: ""
+            val json = JSONObject(body)
+            if (response.isSuccessful) {
+                Result.success(
+                    ProfileData(
+                        id = json.getString("id"),
+                        name = json.optCleanString("name"),
+                        email = json.optCleanString("email"),
+                    )
+                )
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "프로필 수정 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun deleteMe(token: String): Result<String> {
+        return try {
+            val response = client.newCall(authDelete("$BASE_URL/users/me", token)).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                val message = try {
+                    JSONObject(body).optString("message", "회원탈퇴가 완료되었습니다")
+                } catch (_: Exception) {
+                    "회원탈퇴가 완료되었습니다"
+                }
+                Result.success(message)
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "회원탈퇴 실패")))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -141,6 +212,35 @@ object ApiService {
     }
 
     // ── Sessions ─────────────────────────────────────
+    fun createSession(token: String, title: String, theme: String): Result<SessionData> {
+        return try {
+            val payload = JSONObject().apply {
+                put("title", title)
+                put("theme", theme)
+            }.toString()
+            val response = client.newCall(
+                authPost("$BASE_URL/sessions", token, payload)
+            ).execute()
+            val body = response.body?.string() ?: ""
+            val json = JSONObject(body)
+            if (response.isSuccessful) {
+                Result.success(
+                    SessionData(
+                        id = json.getString("id"),
+                        title = json.optCleanString("title"),
+                        theme = json.optCleanString("theme"),
+                        status = json.optCleanString("status"),
+                        createdAt = json.optString("created_at", ""),
+                    )
+                )
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "세션 생성 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     fun getSessions(token: String): Result<List<InterviewSession>> {
         return try {
             val response = client.newCall(authGet("$BASE_URL/sessions", token)).execute()
@@ -161,10 +261,56 @@ object ApiService {
                 }
                 Result.success(list)
             } else {
-                Result.success(emptyList())
+                Result.failure(Exception(parseErrorMessage(body, "세션 목록 조회 실패")))
             }
         } catch (e: Exception) {
-            Result.success(emptyList())
+            Result.failure(e)
+        }
+    }
+
+    fun voiceTurn(
+        token: String,
+        sessionId: String,
+        audioBytes: ByteArray,
+        fileName: String = "recording.m4a",
+        contentType: String = "audio/m4a",
+    ): Result<VoiceTurnData> {
+        return try {
+            val mediaType = contentType.toMediaTypeOrNull() ?: DEFAULT_BINARY
+            val multipartBody = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("session_id", sessionId)
+                .addFormDataPart(
+                    "audio_file",
+                    fileName,
+                    audioBytes.toRequestBody(mediaType),
+                )
+                .build()
+
+            val request = Request.Builder()
+                .url("$BASE_URL/voice/turn")
+                .addHeader("Authorization", "Bearer $token")
+                .post(multipartBody)
+                .build()
+
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: ""
+            val json = JSONObject(body)
+
+            if (response.isSuccessful) {
+                val audioUrl = json.optString("audio_url", "")
+                Result.success(
+                    VoiceTurnData(
+                        userText = json.optString("user_text", ""),
+                        assistantText = json.optString("assistant_text", ""),
+                        audioUrl = toAbsoluteUrl(audioUrl),
+                    )
+                )
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "음성 인터뷰 처리 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 
@@ -477,6 +623,20 @@ data class ProfileData(
     val id: String,
     val name: String,
     val email: String,
+)
+
+data class SessionData(
+    val id: String,
+    val title: String,
+    val theme: String,
+    val status: String,
+    val createdAt: String,
+)
+
+data class VoiceTurnData(
+    val userText: String,
+    val assistantText: String,
+    val audioUrl: String,
 )
 
 data class ChatMessageData(

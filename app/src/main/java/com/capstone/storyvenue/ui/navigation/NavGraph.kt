@@ -1,7 +1,9 @@
 package com.capstone.storyvenue.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.navigation.NavType
 import androidx.navigation.NavHostController
+import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -24,7 +26,7 @@ object Routes {
     const val LOGIN           = "login"
     const val SIGNUP          = "signup"
     const val HOME            = "home"
-    const val VOICE_INTERVIEW = "voice_interview"
+    const val VOICE_INTERVIEW = "voice_interview?sessionId={sessionId}"
     const val CHAPTER_DRAFT   = "chapter_draft"
     const val BOOK_PREVIEW    = "book_preview"
     const val FEED            = "feed"
@@ -35,6 +37,8 @@ object Routes {
     const val NOTIFICATIONS   = "notifications"
     fun feedDetail(postId: String) = "feed_detail/$postId"
     fun chatRoom(userId: String) = "chat_room/$userId"
+    fun voiceInterview(sessionId: String? = null) =
+        if (sessionId.isNullOrBlank()) "voice_interview" else "voice_interview?sessionId=$sessionId"
 }
 
 @Composable
@@ -64,15 +68,27 @@ fun StoryVenueNavGraph(
         }
         composable(Routes.HOME) {
             HomeScreen(
-                onNewInterview = { navController.navigate(Routes.VOICE_INTERVIEW) },
+                onNewInterview = { navController.navigate(Routes.voiceInterview()) },
+                onSessionClick = { session -> navController.navigate(Routes.voiceInterview(session.id)) },
                 onNotificationClick = { navController.navigate(Routes.NOTIFICATIONS) },
                 onProfileClick = { navController.navigate(Routes.PROFILE) },
                 onFeedClick = { navController.navigate(Routes.FEED) },
                 onChatClick = { navController.navigate(Routes.CHAT_LIST) },
             )
         }
-        composable(Routes.VOICE_INTERVIEW) {
+        composable(
+            route = Routes.VOICE_INTERVIEW,
+            arguments = listOf(
+                navArgument("sessionId") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
+        ) { back ->
+            val sessionId = back.arguments?.getString("sessionId")
             VoiceInterviewScreen(
+                initialSessionId = sessionId,
                 onBack = { navController.popBackStack() },
                 onGenerateChapter = { navController.navigate(Routes.CHAPTER_DRAFT) },
             )
@@ -86,7 +102,7 @@ fun StoryVenueNavGraph(
         composable(Routes.BOOK_PREVIEW) {
             BookPreviewScreen(
                 onBack = { navController.popBackStack() },
-                onAddChapter = { navController.navigate(Routes.VOICE_INTERVIEW) },
+                onAddChapter = { navController.navigate(Routes.voiceInterview()) },
                 onPostToFeed = { navController.navigate(Routes.FEED) },
             )
         }
