@@ -291,7 +291,9 @@ object ApiService {
                             id = obj.getString("id"),
                             number = arr.length() - i,
                             date = obj.optString("created_at", "").take(10).replace("-", "."),
-                            title = "\"${obj.optString("title", "문답")}\"",
+                            title = obj.optString("title", "문답"),
+                            sessionType = obj.optCleanString("session_type"),
+                            status = obj.optCleanString("status"),
                         )
                     )
                 }
