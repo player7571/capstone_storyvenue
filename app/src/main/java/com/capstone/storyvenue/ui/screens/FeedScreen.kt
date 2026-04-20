@@ -91,6 +91,8 @@ fun FeedScreen(
     var posts by remember { mutableStateOf<List<FeedPost>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var isRefreshing by remember { mutableStateOf(false) }
+    var hasNotifBadge by remember { mutableStateOf(false) }
+    var hasChatBadge by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     suspend fun loadFeed() {
@@ -99,8 +101,18 @@ fun FeedScreen(
         }
     }
 
+    suspend fun loadBadges() {
+        withContext(Dispatchers.IO) {
+            ApiService.getUnreadCount(token).onSuccess { hasNotifBadge = it > 0 }
+            ApiService.getChatPartners(token).onSuccess { partners ->
+                hasChatBadge = partners.any { it.unreadCount > 0 }
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         loadFeed()
+        loadBadges()
         isLoading = false
     }
 
@@ -123,19 +135,16 @@ fun FeedScreen(
                     color = StoryVenueColors.Primary,
                     fontFamily = SBAggroFamily,
                 )
-                IconButton(onClick = onNotificationClick) {
-                    Icon(
-                        imageVector = Icons.Filled.Notifications,
-                        contentDescription = "알림",
-                        tint = StoryVenueColors.OnSurface,
-                        modifier = Modifier.size(28.dp),
-                    )
-                }
+                BellIconButton(
+                    hasBadge = hasNotifBadge,
+                    onClick = onNotificationClick,
+                )
             }
         },
         bottomBar = {
             StoryBottomNavBar(
                 selectedIndex = 0,
+                hasChatBadge = hasChatBadge,
                 onHomeClick = onHomeClick,
                 onChatClick = onChatClick,
                 onProfileClick = onProfileClick,
