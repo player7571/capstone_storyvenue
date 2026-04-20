@@ -103,9 +103,13 @@ object ApiService {
 
             val response = client.newCall(request).execute()
             val responseBody = response.body?.string() ?: ""
-            val json = JSONObject(responseBody)
 
             if (response.isSuccessful) {
+                val json = try {
+                    JSONObject(responseBody)
+                } catch (_: Exception) {
+                    return Result.failure(Exception("로그인 응답 형식이 올바르지 않습니다."))
+                }
                 val token = json.getString("access_token")
                 val userId = json.getString("user_id")
                 Result.success(Pair(token, userId))
@@ -133,10 +137,14 @@ object ApiService {
 
             val response = client.newCall(request).execute()
             val responseBody = response.body?.string() ?: ""
-            val json = JSONObject(responseBody)
 
             if (response.isSuccessful) {
-                Result.success(json.optString("message", "회원가입 성공"))
+                val message = try {
+                    JSONObject(responseBody).optString("message", "회원가입 성공")
+                } catch (_: Exception) {
+                    "회원가입 성공"
+                }
+                Result.success(message)
             } else {
                 val detail = parseErrorMessage(responseBody, "회원가입에 실패했습니다")
                 Result.failure(Exception(detail))
@@ -283,7 +291,9 @@ object ApiService {
                             id = obj.getString("id"),
                             number = arr.length() - i,
                             date = obj.optString("created_at", "").take(10).replace("-", "."),
-                            title = "\"${obj.optString("title", "문답")}\"",
+                            title = obj.optString("title", "문답"),
+                            sessionType = obj.optCleanString("session_type"),
+                            status = obj.optCleanString("status"),
                         )
                     )
                 }
@@ -419,6 +429,69 @@ object ApiService {
                 )
             } else {
                 Result.failure(Exception(parseErrorMessage(body, "음성 문답 처리 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun getSessionMessages(token: String, sessionId: String): Result<List<SessionMessageData>> {
+        return try {
+            val response = client.newCall(
+                authGet("$BASE_URL/messages?session_id=$sessionId", token)
+            ).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                val arr = JSONArray(body)
+                val list = mutableListOf<SessionMessageData>()
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    list.add(
+                        SessionMessageData(
+                            id = obj.getString("id"),
+                            role = obj.optString("role", ""),
+                            content = obj.optString("content", ""),
+                            createdAt = obj.optString("created_at", ""),
+                        )
+                    )
+                }
+                Result.success(list)
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "대화 기록 조회 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun generateChapter(
+        token: String,
+        sessionId: String,
+        chapterType: String,
+    ): Result<GeneratedChapterData> {
+        return try {
+            val payload = JSONObject().apply {
+                put("session_id", sessionId)
+                put("chapter_type", chapterType)
+            }.toString()
+
+            val response = client.newCall(
+                authPost("$BASE_URL/chapters/generate", token, payload)
+            ).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                val json = JSONObject(body)
+                Result.success(
+                    GeneratedChapterData(
+                        id = json.optString("id", ""),
+                        sessionId = json.optString("session_id", sessionId),
+                        title = json.optString("title", ""),
+                        content = json.optString("content", ""),
+                        chapterType = json.optString("chapter_type", chapterType),
+                    )
+                )
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "챕터 생성 실패")))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -767,6 +840,21 @@ data class SessionDetailData(
     val sessionType: String,
     val photoUrl: String?,
     val status: String,
+)
+
+data class SessionMessageData(
+    val id: String,
+    val role: String,
+    val content: String,
+    val createdAt: String,
+)
+
+data class GeneratedChapterData(
+    val id: String,
+    val sessionId: String,
+    val title: String,
+    val content: String,
+    val chapterType: String,
 )
 
 data class ChatMessageData(
