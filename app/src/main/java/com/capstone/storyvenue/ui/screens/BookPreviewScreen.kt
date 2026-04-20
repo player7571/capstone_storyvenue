@@ -92,7 +92,7 @@ fun BookPreviewScreen(
                 title = {
                     Text(
                         text       = bookTitle,
-                        fontSize   = 18.sp,
+                        fontSize   = 20.sp,
                         fontWeight = FontWeight.SemiBold,
                         color      = StoryVenueColors.OnSurface
                     )
@@ -164,7 +164,7 @@ fun BookPreviewScreen(
                 ) {
                     Text(
                         text       = "이야기 더 만들기",
-                        fontSize   = 16.sp,
+                        fontSize   = 18.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -186,7 +186,7 @@ fun BookPreviewScreen(
                 ) {
                     Text(
                         text       = "이야기에 올리기",
-                        fontSize   = 16.sp,
+                        fontSize   = 18.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -231,7 +231,7 @@ private fun ChapterAccordionCard(
             ) {
                 Text(
                     text       = "이야기 ${chapter.number} : ${chapter.title}",
-                    fontSize   = 17.sp,
+                    fontSize   = 19.sp,
                     fontWeight = FontWeight.Bold,
                     color      = StoryVenueColors.Primary,
                     modifier   = Modifier.weight(1f)
@@ -285,9 +285,9 @@ private fun ChapterAccordionCard(
                     Spacer(Modifier.height(12.dp))
                     Text(
                         text       = chapter.preview,
-                        fontSize   = 14.sp,
+                        fontSize   = 16.sp,
                         color      = StoryVenueColors.SubText,
-                        lineHeight = 22.sp,
+                        lineHeight = 24.sp,
                         maxLines   = 4,
                         overflow   = TextOverflow.Ellipsis
                     )

@@ -96,7 +96,7 @@ fun StoryButton(
             Text(
                 text = text,
                 color = if (variant == ButtonVariant.Secondary) StoryVenueColors.OnSurface else Color.White,
-                fontSize = 16.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = SBAggroFamily,
             )
@@ -125,7 +125,7 @@ fun StoryTextField(
                     label,
                     color = StoryVenueColors.SubText,
                     fontFamily = SBAggroFamily,
-                    fontSize = 16.sp,
+                    fontSize = 18.sp,
                 )
             },
             singleLine = true,
@@ -161,7 +161,7 @@ fun StoryTextField(
             Text(
                 text = errorMessage,
                 color = StoryVenueColors.Error,
-                fontSize = 12.sp,
+                fontSize = 14.sp,
                 fontFamily = SBAggroFamily,
                 modifier = Modifier.padding(start = 8.dp),
             )
@@ -219,7 +219,7 @@ fun SplashScreen(
         ) {
             Text(
                 text = "이야기마당",
-                fontSize = 36.sp,
+                fontSize = 38.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
                 fontFamily = SBAggroFamily,
@@ -227,10 +227,10 @@ fun SplashScreen(
             Spacer(Modifier.height(12.dp))
             Text(
                 text = "당신의 이야기를\n책으로 만들어요",
-                fontSize = 16.sp,
+                fontSize = 18.sp,
                 color = Color.White.copy(alpha = 0.8f),
                 textAlign = TextAlign.Center,
-                lineHeight = 26.sp,
+                lineHeight = 28.sp,
                 fontFamily = SBAggroFamily,
             )
             Spacer(Modifier.height(48.dp))
@@ -268,7 +268,7 @@ fun LoginScreen(
             Spacer(Modifier.height(80.dp))
             Text(
                 text = "이야기마당",
-                fontSize = 32.sp,
+                fontSize = 34.sp,
                 fontWeight = FontWeight.Bold,
                 color = StoryVenueColors.Primary,
                 fontFamily = SBAggroFamily,
@@ -322,7 +322,7 @@ fun LoginScreen(
                 Text(
                     text = "회원가입으로 이동",
                     color = StoryVenueColors.SubText,
-                    fontSize = 14.sp,
+                    fontSize = 16.sp,
                     fontFamily = SBAggroFamily,
                 )
             }
@@ -361,7 +361,7 @@ fun SignUpScreen(
                         fontWeight = FontWeight.Bold,
                         color = StoryVenueColors.OnSurface,
                         fontFamily = SBAggroFamily,
-                        fontSize = 18.sp,
+                        fontSize = 20.sp,
                     )
                 },
                 navigationIcon = {
@@ -419,7 +419,7 @@ fun SignUpScreen(
             )
             if (serverError != null) {
                 Spacer(Modifier.height(8.dp))
-                Text(text = serverError!!, color = StoryVenueColors.Error, fontSize = 13.sp, fontFamily = SBAggroFamily)
+                Text(text = serverError!!, color = StoryVenueColors.Error, fontSize = 15.sp, fontFamily = SBAggroFamily)
             }
             Spacer(Modifier.height(32.dp))
             StoryButton(
@@ -449,7 +449,7 @@ fun SignUpScreen(
                     Text(
                         "이미 계정이 있어요.",
                         color = StoryVenueColors.SubText,
-                        fontSize = 15.sp,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = SBAggroFamily,
                     )

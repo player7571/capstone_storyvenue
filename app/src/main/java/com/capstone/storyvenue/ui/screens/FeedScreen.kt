@@ -117,7 +117,7 @@ fun FeedScreen(
             ) {
                 Text(
                     text = "이야기마당",
-                    fontSize = 22.sp,
+                    fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     color = StoryVenueColors.Primary,
                     fontFamily = SBAggroFamily,
@@ -213,14 +213,14 @@ fun FeedPostCard(
                     size = 36.dp,
                 )
                 Spacer(Modifier.width(10.dp))
-                Text(text = post.authorName, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = StoryVenueColors.OnSurface, fontFamily = SBAggroFamily)
+                Text(text = post.authorName, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = StoryVenueColors.OnSurface, fontFamily = SBAggroFamily)
                 Spacer(Modifier.weight(1f))
-                Text(text = post.timeAgo, fontSize = 12.sp, color = StoryVenueColors.SubText, fontFamily = SBAggroFamily)
+                Text(text = post.timeAgo, fontSize = 14.sp, color = StoryVenueColors.SubText, fontFamily = SBAggroFamily)
             }
             Spacer(Modifier.height(12.dp))
-            Text(text = post.title, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = StoryVenueColors.OnSurface, fontFamily = SBAggroFamily)
+            Text(text = post.title, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = StoryVenueColors.OnSurface, fontFamily = SBAggroFamily)
             Spacer(Modifier.height(6.dp))
-            Text(text = post.preview, fontSize = 14.sp, color = StoryVenueColors.SubText, fontFamily = SBAggroFamily, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(text = post.preview, fontSize = 16.sp, color = StoryVenueColors.SubText, fontFamily = SBAggroFamily, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(
@@ -242,11 +242,11 @@ fun FeedPostCard(
                     )
                 }
                 Spacer(Modifier.width(4.dp))
-                Text(text = "$likeCount", fontSize = 13.sp, color = StoryVenueColors.SubText, fontFamily = SBAggroFamily)
+                Text(text = "$likeCount", fontSize = 15.sp, color = StoryVenueColors.SubText, fontFamily = SBAggroFamily)
                 Spacer(Modifier.width(16.dp))
-                Text(text = "💬", fontSize = 14.sp)
+                Text(text = "💬", fontSize = 16.sp)
                 Spacer(Modifier.width(4.dp))
-                Text(text = "${post.commentCount}", fontSize = 13.sp, color = StoryVenueColors.SubText, fontFamily = SBAggroFamily)
+                Text(text = "${post.commentCount}", fontSize = 15.sp, color = StoryVenueColors.SubText, fontFamily = SBAggroFamily)
             }
         }
     }
@@ -290,7 +290,7 @@ fun FeedDetailScreen(
         containerColor = StoryVenueColors.Background,
         topBar = {
             TopAppBar(
-                title = { Text(text = post?.authorName ?: "", fontWeight = FontWeight.Bold, color = StoryVenueColors.OnSurface, fontFamily = SBAggroFamily, fontSize = 18.sp) },
+                title = { Text(text = post?.authorName ?: "", fontWeight = FontWeight.Bold, color = StoryVenueColors.OnSurface, fontFamily = SBAggroFamily, fontSize = 20.sp) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = StoryVenueColors.OnSurface)
@@ -350,7 +350,7 @@ fun FeedDetailScreen(
             ) {
                 item {
                     Spacer(Modifier.height(16.dp))
-                    Text(text = post!!.title, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = StoryVenueColors.Primary, fontFamily = SBAggroFamily)
+                    Text(text = post!!.title, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = StoryVenueColors.Primary, fontFamily = SBAggroFamily)
                     Spacer(Modifier.height(16.dp))
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -360,10 +360,10 @@ fun FeedDetailScreen(
                     ) {
                         Text(
                             text = post!!.preview,
-                            fontSize = 15.sp,
+                            fontSize = 17.sp,
                             color = StoryVenueColors.OnSurface,
                             fontFamily = SBAggroFamily,
-                            lineHeight = 26.sp,
+                            lineHeight = 28.sp,
                             modifier = Modifier.padding(20.dp),
                         )
                     }
@@ -391,13 +391,13 @@ fun FeedDetailScreen(
                             )
                         }
                         Spacer(Modifier.width(4.dp))
-                        Text(text = "좋아요 $likeCount", fontSize = 15.sp, color = StoryVenueColors.OnSurface, fontFamily = SBAggroFamily, fontWeight = FontWeight.Bold)
+                        Text(text = "좋아요 $likeCount", fontSize = 17.sp, color = StoryVenueColors.OnSurface, fontFamily = SBAggroFamily, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.weight(1f))
-                        Text(text = "|", fontSize = 15.sp, color = StoryVenueColors.SubText, fontFamily = SBAggroFamily)
+                        Text(text = "|", fontSize = 17.sp, color = StoryVenueColors.SubText, fontFamily = SBAggroFamily)
                         Spacer(Modifier.width(16.dp))
                         Text(
                             text = "대화",
-                            fontSize = 15.sp,
+                            fontSize = 17.sp,
                             color = StoryVenueColors.OnSurface,
                             fontFamily = SBAggroFamily,
                             fontWeight = FontWeight.Bold,
@@ -406,7 +406,7 @@ fun FeedDetailScreen(
                     }
                     Spacer(Modifier.height(16.dp))
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = "댓글 ${comments.size}개", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = StoryVenueColors.OnSurface, fontFamily = SBAggroFamily)
+                        Text(text = "댓글 ${comments.size}개", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = StoryVenueColors.OnSurface, fontFamily = SBAggroFamily)
                         Spacer(Modifier.width(12.dp))
                         Box(modifier = Modifier.height(1.dp).weight(1f).background(StoryVenueColors.Divider))
                     }
@@ -422,12 +422,12 @@ fun FeedDetailScreen(
                         Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(text = comment.authorName, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = StoryVenueColors.OnSurface, fontFamily = SBAggroFamily)
+                                Text(text = comment.authorName, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = StoryVenueColors.OnSurface, fontFamily = SBAggroFamily)
                                 Spacer(Modifier.width(8.dp))
-                                Text(text = comment.timeAgo, fontSize = 12.sp, color = StoryVenueColors.SubText, fontFamily = SBAggroFamily)
+                                Text(text = comment.timeAgo, fontSize = 14.sp, color = StoryVenueColors.SubText, fontFamily = SBAggroFamily)
                             }
                             Spacer(Modifier.height(4.dp))
-                            Text(text = comment.content, fontSize = 14.sp, color = StoryVenueColors.OnSurface, fontFamily = SBAggroFamily)
+                            Text(text = comment.content, fontSize = 16.sp, color = StoryVenueColors.OnSurface, fontFamily = SBAggroFamily)
                         }
                     }
                 }

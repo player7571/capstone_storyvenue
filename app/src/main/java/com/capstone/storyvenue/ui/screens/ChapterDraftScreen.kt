@@ -154,7 +154,7 @@ fun ChapterDraftScreen(
                 title = {
                     Text(
                         text       = "이야기 초안",
-                        fontSize   = 16.sp,
+                        fontSize   = 18.sp,
                         fontWeight = FontWeight.Medium,
                         color      = StoryVenueColors.OnSurface
                     )
@@ -223,10 +223,10 @@ private fun DraftContent(draft: ChapterDraft) {
         // 챕터 제목
         Text(
             text       = "이야기 ${draft.chapterNumber} : ${draft.title}\n이야기가 정리되었습니다!",
-            fontSize   = 20.sp,
+            fontSize   = 22.sp,
             fontWeight = FontWeight.Bold,
             color      = StoryVenueColors.Primary,
-            lineHeight = 28.sp,
+            lineHeight = 30.sp,
             modifier   = Modifier.padding(bottom = 20.dp)
         )
 
@@ -239,9 +239,9 @@ private fun DraftContent(draft: ChapterDraft) {
         ) {
             Text(
                 text       = draft.content,
-                fontSize   = 15.sp,
+                fontSize   = 17.sp,
                 color      = StoryVenueColors.OnSurface,
-                lineHeight = 24.sp,
+                lineHeight = 26.sp,
                 modifier   = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
@@ -262,7 +262,7 @@ private fun LoadingState() {
             Spacer(Modifier.height(16.dp))
             Text(
                 text     = "이야기를 생성하고 있어요...",
-                fontSize = 14.sp,
+                fontSize = 16.sp,
                 color    = StoryVenueColors.SubText
             )
         }
@@ -281,7 +281,7 @@ private fun ErrorState(message: String, onRetry: () -> Unit) {
         ) {
             Text(
                 text      = message,
-                fontSize  = 14.sp,
+                fontSize  = 16.sp,
                 color     = StoryVenueColors.Error,
                 textAlign = TextAlign.Center
             )
@@ -321,7 +321,7 @@ private fun BottomButtons(
         ) {
             Text(
                 text       = "다시 생성",
-                fontSize   = 16.sp,
+                fontSize   = 18.sp,
                 fontWeight = FontWeight.Medium
             )
         }
@@ -343,7 +343,7 @@ private fun BottomButtons(
         ) {
             Text(
                 text       = "책에 추가",
-                fontSize   = 16.sp,
+                fontSize   = 18.sp,
                 fontWeight = FontWeight.SemiBold
             )
         }

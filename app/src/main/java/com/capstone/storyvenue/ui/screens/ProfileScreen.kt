@@ -244,7 +244,7 @@ fun ProfileScreen(
                             text = errorMessage ?: "",
                             color = StoryVenueColors.Error,
                             fontFamily = SBAggroFamily,
-                            fontSize = 13.sp,
+                            fontSize = 15.sp,
                         )
                     }
                 }
@@ -374,7 +374,7 @@ fun ProfileScreen(
                         fontWeight = FontWeight.Bold,
                         color = StoryVenueColors.OnSurface,
                         fontFamily = SBAggroFamily,
-                        fontSize = 18.sp,
+                        fontSize = 20.sp,
                     )
                 },
                 actions = {
@@ -446,7 +446,7 @@ fun ProfileScreen(
 
             Text(
                 text = if (avatarUrl == null) "사진 추가하기" else "사진 변경하기",
-                fontSize = 12.sp,
+                fontSize = 14.sp,
                 color = StoryVenueColors.SubText,
                 fontFamily = SBAggroFamily,
             )
@@ -455,7 +455,7 @@ fun ProfileScreen(
 
             Text(
                 text = userName,
-                fontSize = 22.sp,
+                fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = StoryVenueColors.OnSurface,
                 fontFamily = SBAggroFamily,
@@ -465,7 +465,7 @@ fun ProfileScreen(
 
             Text(
                 text = userEmail,
-                fontSize = 14.sp,
+                fontSize = 16.sp,
                 color = StoryVenueColors.OnSurface,
                 fontFamily = SBAggroFamily,
                 fontWeight = FontWeight.Bold,
@@ -520,7 +520,7 @@ fun ProfileMenuItem(
         ) {
             Text(
                 text = text,
-                fontSize = 16.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = textColor,
                 fontFamily = SBAggroFamily,

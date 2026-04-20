@@ -471,7 +471,7 @@ fun VoiceInterviewScreen(
                         fontWeight = FontWeight.Bold,
                         color = StoryVenueColors.OnSurface,
                         fontFamily = SBAggroFamily,
-                        fontSize = 18.sp,
+                        fontSize = 20.sp,
                     )
                 },
                 navigationIcon = {
@@ -481,7 +481,7 @@ fun VoiceInterviewScreen(
                     ) {
                         Text(
                             text = "<",
-                            fontSize = 20.sp,
+                            fontSize = 22.sp,
                             fontWeight = FontWeight.Bold,
                             color = StoryVenueColors.Primary,
                             fontFamily = SBAggroFamily,
@@ -522,7 +522,7 @@ fun VoiceInterviewScreen(
                     } else {
                         Text(
                             text = "📷",
-                            fontSize = 32.sp,
+                            fontSize = 34.sp,
                         )
                     }
                 }
@@ -545,11 +545,11 @@ fun VoiceInterviewScreen(
                 ) {
                     Text(
                         text = "Q$currentProgress. $currentQuestion",
-                        fontSize = 20.sp,
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
                         color = StoryVenueColors.OnSurface,
                         fontFamily = SBAggroFamily,
-                        lineHeight = 30.sp,
+                        lineHeight = 32.sp,
                     )
                 }
             }
@@ -574,7 +574,7 @@ fun VoiceInterviewScreen(
                 Spacer(Modifier.size(12.dp))
                 Text(
                     text = "${(currentProgress.toFloat() / totalQuestions * 100).toInt()}%",
-                    fontSize = 14.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = StoryVenueColors.SubText,
                     fontFamily = SBAggroFamily,
@@ -585,7 +585,7 @@ fun VoiceInterviewScreen(
 
             Text(
                 text = "진행도 :  $currentProgress/$totalQuestions 질문",
-                fontSize = 14.sp,
+                fontSize = 16.sp,
                 color = StoryVenueColors.SubText,
                 fontFamily = SBAggroFamily,
                 textAlign = TextAlign.Center,
@@ -628,7 +628,7 @@ fun VoiceInterviewScreen(
             ) {
                 Text(
                     text = if (isRecording) "■" else "🎙",
-                    fontSize = 48.sp,
+                    fontSize = 50.sp,
                     color = if (isRecording) Color.White else StoryVenueColors.OnSurface,
                 )
             }
@@ -645,7 +645,7 @@ fun VoiceInterviewScreen(
                     !sessionStarted -> "마이크를 누르면 음성 문답이 시작돼요"
                     else -> "마이크 버튼을 눌러 실시간 녹음을 시작하세요"
                 },
-                fontSize = 16.sp,
+                fontSize = 18.sp,
                 color = if (isRecording || isUploadingAudio || isPreparingSession || isUploadingPhoto)
                     StoryVenueColors.Error else StoryVenueColors.SubText,
                 fontFamily = SBAggroFamily,
@@ -668,7 +668,7 @@ fun VoiceInterviewScreen(
                         fontFamily = SBAggroFamily,
                         fontWeight = FontWeight.Bold,
                         color = StoryVenueColors.Primary,
-                        fontSize = 16.sp,
+                        fontSize = 18.sp,
                     )
                 }
             }
@@ -677,7 +677,7 @@ fun VoiceInterviewScreen(
                 Spacer(Modifier.height(16.dp))
                 Text(
                     text = "내 답변: $userText",
-                    fontSize = 14.sp,
+                    fontSize = 16.sp,
                     color = StoryVenueColors.SubText,
                     fontFamily = SBAggroFamily,
                     textAlign = TextAlign.Center,
@@ -689,7 +689,7 @@ fun VoiceInterviewScreen(
                 Spacer(Modifier.height(8.dp))
                 Text(
                     text = "AI 인터뷰어: $assistantText",
-                    fontSize = 14.sp,
+                    fontSize = 16.sp,
                     color = StoryVenueColors.Primary,
                     fontFamily = SBAggroFamily,
                     textAlign = TextAlign.Center,

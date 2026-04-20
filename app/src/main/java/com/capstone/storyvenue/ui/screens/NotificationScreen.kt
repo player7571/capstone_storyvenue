@@ -98,7 +98,7 @@ fun NotificationScreen(
                         fontWeight = FontWeight.Bold,
                         color = StoryVenueColors.OnSurface,
                         fontFamily = SBAggroFamily,
-                        fontSize = 18.sp,
+                        fontSize = 20.sp,
                     )
                 },
                 navigationIcon = {
@@ -188,7 +188,7 @@ fun NotificationScreen(
                                 name = notification.actorName,
                                 avatarUrl = notification.actorAvatarUrl,
                                 size = 44.dp,
-                                fontSize = 18.sp,
+                                fontSize = 20.sp,
                             )
 
                             Spacer(Modifier.width(12.dp))
@@ -197,7 +197,7 @@ fun NotificationScreen(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
                                         text = notification.actorName,
-                                        fontSize = 15.sp,
+                                        fontSize = 17.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = StoryVenueColors.OnSurface,
                                         fontFamily = SBAggroFamily,
@@ -206,7 +206,7 @@ fun NotificationScreen(
                                 Spacer(Modifier.height(4.dp))
                                 Text(
                                     text = notification.message,
-                                    fontSize = 14.sp,
+                                    fontSize = 16.sp,
                                     color = StoryVenueColors.OnSurface,
                                     fontFamily = SBAggroFamily,
                                 )
@@ -214,7 +214,7 @@ fun NotificationScreen(
                                     Spacer(Modifier.height(4.dp))
                                     Text(
                                         text = notification.commentPreview,
-                                        fontSize = 13.sp,
+                                        fontSize = 15.sp,
                                         color = StoryVenueColors.SubText,
                                         fontFamily = SBAggroFamily,
                                         maxLines = 1,
@@ -224,7 +224,7 @@ fun NotificationScreen(
                                 Spacer(Modifier.height(6.dp))
                                 Text(
                                     text = "· ${notification.timeAgo}",
-                                    fontSize = 12.sp,
+                                    fontSize = 14.sp,
                                     color = StoryVenueColors.SubText,
                                     fontFamily = SBAggroFamily,
                                 )

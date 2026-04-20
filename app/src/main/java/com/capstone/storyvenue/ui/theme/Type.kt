@@ -15,10 +15,10 @@ val SBAggroFamily = FontFamily(
 )
 
 val StoryVenueTypography = Typography(
-    displayLarge   = TextStyle(fontFamily = SBAggroFamily, fontWeight = FontWeight.Bold, fontSize = 28.sp, lineHeight = 36.sp),
-    headlineMedium = TextStyle(fontFamily = SBAggroFamily, fontWeight = FontWeight.Bold, fontSize = 24.sp, lineHeight = 32.sp),
-    titleLarge     = TextStyle(fontFamily = SBAggroFamily, fontWeight = FontWeight.Bold, fontSize = 20.sp, lineHeight = 28.sp),
-    bodyLarge      = TextStyle(fontFamily = SBAggroFamily, fontWeight = FontWeight.Normal, fontSize = 16.sp, lineHeight = 24.sp),
-    bodyMedium     = TextStyle(fontFamily = SBAggroFamily, fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 20.sp),
-    labelSmall     = TextStyle(fontFamily = SBAggroFamily, fontWeight = FontWeight.Normal, fontSize = 12.sp, lineHeight = 16.sp),
+    displayLarge   = TextStyle(fontFamily = SBAggroFamily, fontWeight = FontWeight.Bold, fontSize = 30.sp, lineHeight = 38.sp),
+    headlineMedium = TextStyle(fontFamily = SBAggroFamily, fontWeight = FontWeight.Bold, fontSize = 26.sp, lineHeight = 34.sp),
+    titleLarge     = TextStyle(fontFamily = SBAggroFamily, fontWeight = FontWeight.Bold, fontSize = 22.sp, lineHeight = 30.sp),
+    bodyLarge      = TextStyle(fontFamily = SBAggroFamily, fontWeight = FontWeight.Normal, fontSize = 18.sp, lineHeight = 26.sp),
+    bodyMedium     = TextStyle(fontFamily = SBAggroFamily, fontWeight = FontWeight.Normal, fontSize = 16.sp, lineHeight = 22.sp),
+    labelSmall     = TextStyle(fontFamily = SBAggroFamily, fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 18.sp),
 )
