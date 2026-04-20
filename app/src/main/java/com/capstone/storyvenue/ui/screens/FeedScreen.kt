@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -140,9 +141,12 @@ fun FeedScreen(
                 CircularProgressIndicator(color = StoryVenueColors.Primary)
             }
         } else if (posts.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
-                Text("아직 게시물이 없습니다", color = StoryVenueColors.SubText, fontFamily = SBAggroFamily)
-            }
+            EmptyState(
+                icon = Icons.AutoMirrored.Filled.MenuBook,
+                title = "아직 올라온 이야기가 없어요",
+                subtitle = "첫 이야기를 올려 사람들과 나눠보세요.",
+                modifier = Modifier.padding(innerPadding),
+            )
         } else {
             LazyColumn(
                 modifier = Modifier
