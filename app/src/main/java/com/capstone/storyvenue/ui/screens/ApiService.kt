@@ -784,6 +784,7 @@ object ApiService {
                             timeAgo = timeAgo(obj.optString("created_at", null)),
                             isRead = obj.optBoolean("is_read", false),
                             type = obj.optString("type", "comment"),
+                            postId = obj.optCleanString("post_id").ifBlank { null },
                         )
                     )
                 }

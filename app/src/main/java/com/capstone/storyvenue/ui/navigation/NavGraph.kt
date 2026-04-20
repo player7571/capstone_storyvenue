@@ -188,7 +188,10 @@ fun StoryVenueNavGraph(
                         "chat" -> item.chatPartnerId?.let {
                             navController.navigate(Routes.chatRoom(it))
                         }
-                        else -> { /* 기존 댓글/좋아요 알림은 현재 별도 동작 없음 */ }
+                        "comment", "like" -> item.postId?.let {
+                            navController.navigate(Routes.feedDetail(it))
+                        }
+                        else -> {}
                     }
                 },
             )
