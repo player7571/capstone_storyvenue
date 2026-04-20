@@ -9,6 +9,7 @@ class NotificationResponse(BaseModel):
     id: UUID
     type: str
     actor_name: str | None = None
+    actor_avatar_url: str | None = None
     post_id: UUID | None = None
     message: str
     comment_preview: str | None = None

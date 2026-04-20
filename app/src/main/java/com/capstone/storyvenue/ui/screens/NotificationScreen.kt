@@ -52,6 +52,7 @@ import kotlinx.coroutines.withContext
 data class NotificationItem(
     val id: String,
     val actorName: String,
+    val actorAvatarUrl: String? = null,
     val message: String,
     val commentPreview: String? = null,
     val timeAgo: String,
@@ -166,21 +167,12 @@ fun NotificationScreen(
                                 .padding(16.dp),
                             verticalAlignment = Alignment.Top,
                         ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(CircleShape)
-                                    .background(StoryVenueColors.Primary),
-                            ) {
-                                Text(
-                                    text = notification.actorName.firstOrNull()?.toString() ?: "?",
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = androidx.compose.ui.graphics.Color.White,
-                                    fontFamily = SBAggroFamily,
-                                )
-                            }
+                            AvatarCircle(
+                                name = notification.actorName,
+                                avatarUrl = notification.actorAvatarUrl,
+                                size = 44.dp,
+                                fontSize = 18.sp,
+                            )
 
                             Spacer(Modifier.width(12.dp))
 

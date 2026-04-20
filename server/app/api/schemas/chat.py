@@ -22,6 +22,7 @@ class MessageResponse(BaseModel):
 class ChatPartnerResponse(BaseModel):
     user_id: str
     name: str | None = None
+    avatar_url: str | None = None
     last_message: str | None = None
     last_message_at: datetime | None = None
     unread_count: int = 0

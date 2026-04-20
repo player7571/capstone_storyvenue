@@ -63,6 +63,7 @@ import kotlinx.coroutines.withContext
 data class FeedPost(
     val id: String,
     val authorName: String,
+    val authorAvatarUrl: String? = null,
     val title: String,
     val preview: String,
     val likeCount: Int,
@@ -178,18 +179,11 @@ fun FeedPostCard(
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.size(36.dp).clip(CircleShape).background(StoryVenueColors.Primary),
-                ) {
-                    Text(
-                        text = post.authorName.firstOrNull()?.toString() ?: "?",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        fontFamily = SBAggroFamily,
-                    )
-                }
+                AvatarCircle(
+                    name = post.authorName,
+                    avatarUrl = post.authorAvatarUrl,
+                    size = 36.dp,
+                )
                 Spacer(Modifier.width(10.dp))
                 Text(text = post.authorName, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = StoryVenueColors.OnSurface, fontFamily = SBAggroFamily)
                 Spacer(Modifier.weight(1f))
@@ -392,12 +386,11 @@ fun FeedDetailScreen(
                 }
                 items(comments.toList()) { comment ->
                     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.Top) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier.size(36.dp).clip(CircleShape).background(StoryVenueColors.Primary),
-                        ) {
-                            Text(text = comment.authorName.firstOrNull()?.toString() ?: "?", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White, fontFamily = SBAggroFamily)
-                        }
+                        AvatarCircle(
+                            name = comment.authorName,
+                            avatarUrl = comment.authorAvatarUrl,
+                            size = 36.dp,
+                        )
                         Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {

@@ -426,37 +426,20 @@ object ApiService {
     }
 
     // ── Feed ─────────────────────────────────────────
+    private fun parseFeedPost(obj: JSONObject): FeedPost = FeedPost(
+        id = obj.getString("id"),
+        authorName = obj.optString("author_name", "익명"),
+        authorAvatarUrl = obj.optCleanString("author_avatar_url").ifBlank { null },
+        title = obj.optString("title", ""),
+        preview = obj.optString("preview", ""),
+        likeCount = obj.optInt("like_count", 0),
+        commentCount = obj.optInt("comment_count", 0),
+        timeAgo = timeAgo(obj.optString("created_at", null)),
+        likedByMe = obj.optBoolean("liked_by_me", false),
+    )
+
     fun getFeed(token: String, limit: Int = 20, offset: Int = 0): Result<List<FeedPost>> {
-        return try {
-            val response = client.newCall(
-                authGet("$BASE_URL/feed?limit=$limit&offset=$offset", token)
-            ).execute()
-            val body = response.body?.string() ?: ""
-            if (response.isSuccessful) {
-                val arr = JSONArray(body)
-                val list = mutableListOf<FeedPost>()
-                for (i in 0 until arr.length()) {
-                    val obj = arr.getJSONObject(i)
-                    list.add(
-                        FeedPost(
-                            id = obj.getString("id"),
-                            authorName = obj.optString("author_name", "익명"),
-                            title = obj.optString("title", ""),
-                            preview = obj.optString("preview", ""),
-                            likeCount = obj.optInt("like_count", 0),
-                            commentCount = obj.optInt("comment_count", 0),
-                            timeAgo = timeAgo(obj.optString("created_at", null)),
-                            likedByMe = obj.optBoolean("liked_by_me", false),
-                        )
-                    )
-                }
-                Result.success(list)
-            } else {
-                Result.failure(Exception("피드 조회 실패"))
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+        return fetchFeedList("$BASE_URL/feed?limit=$limit&offset=$offset", token)
     }
 
     fun getMyFeed(token: String, limit: Int = 20, offset: Int = 0): Result<List<FeedPost>> {
@@ -475,19 +458,7 @@ object ApiService {
                 val arr = JSONArray(body)
                 val list = mutableListOf<FeedPost>()
                 for (i in 0 until arr.length()) {
-                    val obj = arr.getJSONObject(i)
-                    list.add(
-                        FeedPost(
-                            id = obj.getString("id"),
-                            authorName = obj.optString("author_name", "익명"),
-                            title = obj.optString("title", ""),
-                            preview = obj.optString("preview", ""),
-                            likeCount = obj.optInt("like_count", 0),
-                            commentCount = obj.optInt("comment_count", 0),
-                            timeAgo = timeAgo(obj.optString("created_at", null)),
-                            likedByMe = obj.optBoolean("liked_by_me", false),
-                        )
-                    )
+                    list.add(parseFeedPost(arr.getJSONObject(i)))
                 }
                 Result.success(list)
             } else {
@@ -506,18 +477,7 @@ object ApiService {
             val body = response.body?.string() ?: ""
             val obj = JSONObject(body)
             if (response.isSuccessful) {
-                Result.success(
-                    FeedPost(
-                        id = obj.getString("id"),
-                        authorName = obj.optString("author_name", "익명"),
-                        title = obj.optString("title", ""),
-                        preview = obj.optString("preview", ""),
-                        likeCount = obj.optInt("like_count", 0),
-                        commentCount = obj.optInt("comment_count", 0),
-                        timeAgo = timeAgo(obj.optString("created_at", null)),
-                        likedByMe = obj.optBoolean("liked_by_me", false),
-                    )
-                )
+                Result.success(parseFeedPost(obj))
             } else {
                 Result.failure(Exception("게시물 조회 실패"))
             }
@@ -547,6 +507,7 @@ object ApiService {
     data class CommentData(
         val id: String,
         val authorName: String,
+        val authorAvatarUrl: String? = null,
         val content: String,
         val timeAgo: String,
     )
@@ -566,6 +527,7 @@ object ApiService {
                         CommentData(
                             id = obj.getString("id"),
                             authorName = obj.optString("author_name", "익명"),
+                            authorAvatarUrl = obj.optCleanString("author_avatar_url").ifBlank { null },
                             content = obj.optString("content", ""),
                             timeAgo = timeAgo(obj.optString("created_at", null)),
                         )
@@ -593,6 +555,7 @@ object ApiService {
                     CommentData(
                         id = obj.getString("id"),
                         authorName = obj.optString("author_name", "나"),
+                        authorAvatarUrl = obj.optCleanString("author_avatar_url").ifBlank { null },
                         content = obj.optString("content", ""),
                         timeAgo = "방금",
                     )
@@ -638,6 +601,7 @@ object ApiService {
                         NotificationItem(
                             id = obj.getString("id"),
                             actorName = obj.optString("actor_name", "알 수 없음"),
+                            actorAvatarUrl = obj.optCleanString("actor_avatar_url").ifBlank { null },
                             message = obj.optString("message", ""),
                             commentPreview = if (obj.isNull("comment_preview")) null
                                 else "\"${obj.getString("comment_preview")}\"",
@@ -697,7 +661,8 @@ object ApiService {
                     list.add(
                         ChatPartner(
                             userId = obj.getString("user_id"),
-                            userName = obj.optString("display_name", "익명"),
+                            userName = obj.optString("name", obj.optString("display_name", "익명")),
+                            avatarUrl = obj.optCleanString("avatar_url").ifBlank { null },
                             lastMessage = obj.optString("last_message", ""),
                             lastMessageTime = timeAgo(obj.optString("last_message_at", null)),
                             unreadCount = obj.optInt("unread_count", 0),

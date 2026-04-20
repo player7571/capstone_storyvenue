@@ -61,6 +61,7 @@ import kotlinx.coroutines.withContext
 data class ChatPartner(
     val userId: String,
     val userName: String,
+    val avatarUrl: String? = null,
     val lastMessage: String,
     val lastMessageTime: String,
     val unreadCount: Int = 0,
@@ -183,21 +184,12 @@ fun ChatListScreen(
                                 .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .clip(CircleShape)
-                                    .background(StoryVenueColors.Primary),
-                            ) {
-                                Text(
-                                    text = partner.userName.firstOrNull()?.toString() ?: "?",
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    fontFamily = SBAggroFamily,
-                                )
-                            }
+                            AvatarCircle(
+                                name = partner.userName,
+                                avatarUrl = partner.avatarUrl,
+                                size = 48.dp,
+                                fontSize = 18.sp,
+                            )
                             Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
