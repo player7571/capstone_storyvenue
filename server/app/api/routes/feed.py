@@ -73,6 +73,71 @@ async def create_feed_post(
     return FeedPostResponse(**data, author_name=None)
 
 
+# ── GET /feed/me ─────────────────────────────────
+@router.get("/me", response_model=list[FeedPostResponse])
+async def list_my_feed(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    user_id: str = Depends(get_current_user_id),
+):
+    sb = get_supabase()
+    result = (
+        sb.table("feed_posts")
+        .select("*, profiles(name)")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .range(offset, offset + limit - 1)
+        .execute()
+    )
+    posts = []
+    for row in result.data or []:
+        profile = row.pop("profiles", None)
+        posts.append(
+            FeedPostResponse(
+                **row,
+                author_name=profile.get("name") if profile else None,
+            )
+        )
+    return posts
+
+
+# ── GET /feed/liked ──────────────────────────────
+@router.get("/liked", response_model=list[FeedPostResponse])
+async def list_liked_feed(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    user_id: str = Depends(get_current_user_id),
+):
+    sb = get_supabase()
+    likes = (
+        sb.table("feed_likes")
+        .select("post_id, created_at")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .range(offset, offset + limit - 1)
+        .execute()
+    )
+    post_ids = [row["post_id"] for row in (likes.data or [])]
+    if not post_ids:
+        return []
+
+    posts_result = (
+        sb.table("feed_posts")
+        .select("*, profiles(name)")
+        .in_("id", post_ids)
+        .execute()
+    )
+    posts_by_id = {}
+    for row in posts_result.data or []:
+        profile = row.pop("profiles", None)
+        posts_by_id[str(row["id"])] = FeedPostResponse(
+            **row,
+            author_name=profile.get("name") if profile else None,
+        )
+    # 좋아요 누른 순서 유지
+    return [posts_by_id[pid] for pid in post_ids if pid in posts_by_id]
+
+
 # ── GET /feed/{post_id} ──────────────────────────
 @router.get("/{post_id}", response_model=FeedDetailResponse)
 async def get_feed_post(
