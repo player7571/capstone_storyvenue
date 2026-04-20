@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -248,6 +249,26 @@ fun NotificationScreen(
                                     fontSize = 14.sp,
                                     color = StoryVenueColors.SubText,
                                     fontFamily = SBAggroFamily,
+                                )
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    val removed = notification
+                                    notifications = notifications.filterNot { it.id == removed.id }
+                                    if (removed.type != "chat") {
+                                        scope.launch(Dispatchers.IO) {
+                                            ApiService.deleteNotification(token, removed.id)
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Close,
+                                    contentDescription = "알림 삭제",
+                                    tint = StoryVenueColors.SubText,
+                                    modifier = Modifier.size(18.dp),
                                 )
                             }
                         }
