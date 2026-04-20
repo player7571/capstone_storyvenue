@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from app.api.dependencies.auth import get_current_user_id
 from app.api.schemas.notifications import NotificationResponse, UnreadCountResponse
@@ -97,10 +97,38 @@ async def mark_as_read(
         .maybe_single()
         .execute()
     )
-    if not noti.data:
+    noti_data = getattr(noti, "data", None) if noti else None
+    if not noti_data:
         raise HTTPException(status_code=404, detail="알림을 찾을 수 없습니다.")
-    if noti.data["user_id"] != user_id:
+    if noti_data["user_id"] != user_id:
         raise HTTPException(status_code=403, detail="본인의 알림이 아닙니다.")
 
     sb.table("notifications").update({"is_read": True}).eq("id", noti_id_str).execute()
     return {"message": "읽음 처리 완료"}
+
+
+# ── DELETE /notifications/{notification_id} ─────
+@router.delete("/{notification_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_notification(
+    notification_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+):
+    """본인의 알림만 삭제할 수 있다."""
+    sb = get_supabase()
+    noti_id_str = str(notification_id)
+
+    noti = (
+        sb.table("notifications")
+        .select("id, user_id")
+        .eq("id", noti_id_str)
+        .maybe_single()
+        .execute()
+    )
+    noti_data = getattr(noti, "data", None) if noti else None
+    if not noti_data:
+        raise HTTPException(status_code=404, detail="알림을 찾을 수 없습니다.")
+    if noti_data["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="본인의 알림이 아닙니다.")
+
+    sb.table("notifications").delete().eq("id", noti_id_str).execute()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -813,6 +813,21 @@ object ApiService {
         }
     }
 
+    fun deleteNotification(token: String, notificationId: String): Result<Unit> {
+        return try {
+            val response = client.newCall(
+                authDelete("$BASE_URL/notifications/$notificationId", token)
+            ).execute()
+            if (response.code == 204 || response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception(parseErrorMessage(response.body?.string() ?: "", "알림 삭제 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     fun markNotificationRead(token: String, notificationId: String): Result<Unit> {
         return try {
             val response = client.newCall(
