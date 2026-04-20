@@ -105,7 +105,7 @@ fun ChatListScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "채팅",
+                        text = "대화",
                         fontWeight = FontWeight.Bold,
                         color = StoryVenueColors.OnSurface,
                         fontFamily = SBAggroFamily,
@@ -148,13 +148,13 @@ fun ChatListScreen(
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = "피드에서 새로운 사람들과",
+                        text = "이야기에서 새로운 사람들과",
                         fontSize = 16.sp,
                         color = StoryVenueColors.SubText,
                         fontFamily = SBAggroFamily,
                     )
                     Text(
-                        text = "채팅으로 연결해보세요!",
+                        text = "대화로 연결해보세요!",
                         fontSize = 16.sp,
                         color = StoryVenueColors.SubText,
                         fontFamily = SBAggroFamily,
@@ -224,7 +224,7 @@ fun ChatListScreen(
     }
 }
 
-// ── 채팅방 화면 ────────────────────────────────
+// ── 대화방 화면 ────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -267,7 +267,7 @@ fun ChatRoomScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = partnerName.ifBlank { "채팅" },
+                        text = partnerName.ifBlank { "대화" },
                         fontWeight = FontWeight.Bold,
                         color = StoryVenueColors.OnSurface,
                         fontFamily = SBAggroFamily,
@@ -302,7 +302,7 @@ fun ChatRoomScreen(
                     onValueChange = { inputText = it },
                     placeholder = {
                         Text(
-                            "메시지를 입력하세요...",
+                            "쪽지를 입력하세요...",
                             color = StoryVenueColors.SubText,
                             fontFamily = SBAggroFamily,
                         )

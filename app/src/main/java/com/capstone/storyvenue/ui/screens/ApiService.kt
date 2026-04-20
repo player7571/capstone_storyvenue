@@ -162,7 +162,7 @@ object ApiService {
             if (response.isSuccessful) {
                 Result.success(parseProfile(json))
             } else {
-                Result.failure(Exception(parseErrorMessage(body, "프로필 조회 실패")))
+                Result.failure(Exception(parseErrorMessage(body, "내정보 조회 실패")))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -180,7 +180,7 @@ object ApiService {
             if (response.isSuccessful) {
                 Result.success(parseProfile(json))
             } else {
-                Result.failure(Exception(parseErrorMessage(body, "프로필 수정 실패")))
+                Result.failure(Exception(parseErrorMessage(body, "내정보 수정 실패")))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -213,7 +213,7 @@ object ApiService {
             if (response.isSuccessful) {
                 Result.success(parseProfile(JSONObject(body)))
             } else {
-                Result.failure(Exception(parseErrorMessage(body, "프로필 사진 업로드 실패")))
+                Result.failure(Exception(parseErrorMessage(body, "사진 올리기 실패")))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -262,7 +262,7 @@ object ApiService {
                     )
                 )
             } else {
-                Result.failure(Exception(parseErrorMessage(body, "세션 생성 실패")))
+                Result.failure(Exception(parseErrorMessage(body, "문답 시작 실패")))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -283,13 +283,13 @@ object ApiService {
                             id = obj.getString("id"),
                             number = arr.length() - i,
                             date = obj.optString("created_at", "").take(10).replace("-", "."),
-                            title = "\"${obj.optString("title", "인터뷰")}\"",
+                            title = "\"${obj.optString("title", "문답")}\"",
                         )
                     )
                 }
                 Result.success(list)
             } else {
-                Result.failure(Exception(parseErrorMessage(body, "세션 목록 조회 실패")))
+                Result.failure(Exception(parseErrorMessage(body, "문답 목록 조회 실패")))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -332,7 +332,7 @@ object ApiService {
                     )
                 )
             } else {
-                Result.failure(Exception(parseErrorMessage(body, "사진 인터뷰 시작에 실패했습니다")))
+                Result.failure(Exception(parseErrorMessage(body, "사진 문답 시작에 실패했습니다")))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -356,7 +356,7 @@ object ApiService {
                     )
                 )
             } else {
-                Result.failure(Exception(parseErrorMessage(body, "세션 상세 조회 실패")))
+                Result.failure(Exception(parseErrorMessage(body, "문답 상세 조회 실패")))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -418,7 +418,7 @@ object ApiService {
                     )
                 )
             } else {
-                Result.failure(Exception(parseErrorMessage(body, "음성 인터뷰 처리 실패")))
+                Result.failure(Exception(parseErrorMessage(body, "음성 문답 처리 실패")))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -671,7 +671,7 @@ object ApiService {
                 }
                 Result.success(list)
             } else {
-                Result.failure(Exception("채팅 목록 조회 실패"))
+                Result.failure(Exception("대화 목록 조회 실패"))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -700,7 +700,7 @@ object ApiService {
                 }
                 Result.success(list)
             } else {
-                Result.failure(Exception("메시지 조회 실패"))
+                Result.failure(Exception("쪽지 조회 실패"))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -725,7 +725,7 @@ object ApiService {
                     )
                 )
             } else {
-                Result.failure(Exception(obj.optString("detail", "메시지 전송 실패")))
+                Result.failure(Exception(obj.optString("detail", "쪽지 전송 실패")))
             }
         } catch (e: Exception) {
             Result.failure(e)

@@ -108,7 +108,7 @@ def signup(payload: SignupRequest) -> SignupResponse:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="회원가입은 되었지만 프로필 생성에 실패했습니다. 관리자에게 문의해주세요.",
+            detail="회원가입은 되었지만 내정보 생성에 실패했습니다. 관리자에게 문의해주세요.",
         ) from exc
 
     return SignupResponse(message="회원가입 성공")

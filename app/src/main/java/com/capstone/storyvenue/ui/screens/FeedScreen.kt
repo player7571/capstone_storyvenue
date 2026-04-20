@@ -110,7 +110,7 @@ fun FeedScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "StoryVenue",
+                    text = "이야기마당",
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     color = StoryVenueColors.Primary,
@@ -368,7 +368,7 @@ fun FeedDetailScreen(
                         Text(text = "|", fontSize = 15.sp, color = StoryVenueColors.SubText, fontFamily = SBAggroFamily)
                         Spacer(Modifier.width(16.dp))
                         Text(
-                            text = "채팅",
+                            text = "대화",
                             fontSize = 15.sp,
                             color = StoryVenueColors.OnSurface,
                             fontFamily = SBAggroFamily,

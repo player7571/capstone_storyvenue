@@ -23,7 +23,7 @@ from app.services.photo_interview import (
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 PHOTO_BUCKET_NAME = "interview-photos"
-PHOTO_SESSION_TITLE = "사진 인터뷰"
+PHOTO_SESSION_TITLE = "사진 문답"
 PHOTO_SESSION_THEME = "photo"
 PHOTO_SESSION_TYPE = "photo"
 PHOTO_COMPLETED_STATUS = "completed"
@@ -58,7 +58,7 @@ def _require_photo_session(session: dict) -> None:
     if session_type != PHOTO_SESSION_TYPE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="사진 인터뷰 세션이 아닙니다.",
+            detail="사진 문답이 아닙니다.",
         )
 
 
@@ -67,7 +67,7 @@ def _require_active_session(session: dict) -> None:
     if session_status != "active":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="이미 종료된 사진 인터뷰 세션입니다.",
+            detail="이미 종료된 사진 문답입니다.",
         )
 
 
@@ -119,7 +119,7 @@ def _validate_photo_upload(image_file: UploadFile, image_bytes: bytes) -> str:
     if content_type not in SUPPORTED_IMAGE_TYPES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="JPEG 또는 PNG 이미지 파일만 업로드할 수 있습니다.",
+            detail="JPEG 또는 PNG 이미지 파일만 올릴 수 있습니다.",
         )
     if not image_bytes:
         raise HTTPException(
@@ -276,7 +276,7 @@ async def create_photo_session(
         if not created.data:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="사진 인터뷰 세션 생성에 실패했습니다.",
+                detail="사진 문답 시작에 실패했습니다.",
             )
 
         session = created.data[0]
@@ -305,7 +305,7 @@ async def create_photo_session(
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"사진 인터뷰 시작 중 오류가 발생했습니다: {exc}",
+            detail=f"사진 문답 시작 중 오류가 발생했습니다: {exc}",
         ) from exc
 
     return PhotoSessionStartResponse(
@@ -389,7 +389,7 @@ async def reply_photo_session(
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"사진 인터뷰 답변 처리 중 오류가 발생했습니다: {exc}",
+            detail=f"사진 문답 답변 처리 중 오류가 발생했습니다: {exc}",
         ) from exc
 
     return PhotoSessionReplyResponse(
@@ -439,7 +439,7 @@ async def end_photo_session(
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"사진 인터뷰 종료 중 오류가 발생했습니다: {exc}",
+            detail=f"사진 문답 종료 중 오류가 발생했습니다: {exc}",
         ) from exc
 
     return PhotoSessionEndResponse(

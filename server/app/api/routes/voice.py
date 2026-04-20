@@ -41,7 +41,7 @@ def _get_session_or_404(session_id: UUID, user_id: str) -> dict:
     if not result.data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="인터뷰 세션을 찾을 수 없습니다.",
+            detail="문답을 찾을 수 없습니다.",
         )
     return result.data
 

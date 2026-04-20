@@ -93,7 +93,7 @@ fun VoiceInterviewScreen(
             if (initialSessionId.isNullOrBlank())
                 "마이크 버튼을 눌러 음성으로 시작하거나, 사진을 첨부해 대화를 시작하세요."
             else
-                "인터뷰 세션을 불러오고 있어요."
+                "문답을 불러오고 있어요."
         )
     }
     var latestAudioUrl by remember { mutableStateOf<String?>(null) }
@@ -211,7 +211,7 @@ fun VoiceInterviewScreen(
         scope.launch {
             isPreparingSession = true
             errorMessage = null
-            val title = "음성 인터뷰 ${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))}"
+            val title = "음성 문답 ${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))}"
             val result = withContext(Dispatchers.IO) {
                 ApiService.createSession(token = token, title = title, theme = "자서전")
             }
@@ -219,10 +219,10 @@ fun VoiceInterviewScreen(
             result.onSuccess { created ->
                 sessionId = created.id
                 sessionType = "voice"
-                assistantText = "세션이 시작되었습니다. 편하게 이야기해주세요."
+                assistantText = "문답이 시작되었습니다. 편하게 이야기해주세요."
                 beginRecordingAfterSession(created.id)
             }.onFailure { e ->
-                errorMessage = e.message ?: "인터뷰 세션 생성에 실패했습니다."
+                errorMessage = e.message ?: "문답 시작에 실패했습니다."
             }
         }
     }
@@ -270,7 +270,7 @@ fun VoiceInterviewScreen(
                 assistantText = voice.assistantText
                 latestAudioUrl = voice.audioUrl
             }.onFailure { e ->
-                errorMessage = e.message ?: "음성 인터뷰 처리에 실패했습니다."
+                errorMessage = e.message ?: "음성 문답 처리에 실패했습니다."
             }
         }
     }
@@ -281,7 +281,7 @@ fun VoiceInterviewScreen(
             return
         }
         if (!sessionId.isNullOrBlank()) {
-            errorMessage = "이미 세션이 시작되어 사진을 첨부할 수 없습니다."
+            errorMessage = "이미 문답이 시작되어 사진을 첨부할 수 없습니다."
             return
         }
         if (isPreparingSession || isUploadingPhoto) return
@@ -322,7 +322,7 @@ fun VoiceInterviewScreen(
                 }
                 photoUrl?.let { loadPhotoThumbnail(it) }
             }.onFailure { e ->
-                errorMessage = e.message ?: "사진 업로드에 실패했습니다."
+                errorMessage = e.message ?: "사진 올리기에 실패했습니다."
             }
         }
     }
@@ -366,13 +366,13 @@ fun VoiceInterviewScreen(
             sessionType = detail.sessionType
             photoUrl = detail.photoUrl
             assistantText = if (detail.sessionType == "photo")
-                "사진 인터뷰를 이어갈 수 있어요. 마이크 버튼을 눌러 답변을 녹음하세요."
+                "사진 문답을 이어갈 수 있어요. 마이크 버튼을 눌러 답변을 녹음하세요."
             else
-                "인터뷰를 이어갈 수 있어요. 마이크 버튼을 눌러 녹음을 시작하세요."
+                "문답을 이어갈 수 있어요. 마이크 버튼을 눌러 녹음을 시작하세요."
             detail.photoUrl?.let { loadPhotoThumbnail(it) }
         }.onFailure { e ->
-            errorMessage = e.message ?: "세션 정보를 불러오지 못했습니다."
-            assistantText = "세션을 불러오지 못했습니다. 뒤로가기 후 다시 시도해주세요."
+            errorMessage = e.message ?: "문답을 불러오지 못했습니다."
+            assistantText = "문답을 불러오지 못했습니다. 뒤로가기 후 다시 시도해주세요."
         }
     }
 
@@ -406,7 +406,7 @@ fun VoiceInterviewScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = if (sessionType == "photo") "사진 인터뷰 중" else "인터뷰 중",
+                        text = if (sessionType == "photo") "사진 문답 중" else "문답 중",
                         fontWeight = FontWeight.Bold,
                         color = StoryVenueColors.OnSurface,
                         fontFamily = SBAggroFamily,
@@ -576,12 +576,12 @@ fun VoiceInterviewScreen(
 
             Text(
                 text = when {
-                    isPreparingSession -> "세션 생성 중..."
-                    isUploadingPhoto -> "사진 업로드 중..."
+                    isPreparingSession -> "문답 준비 중..."
+                    isUploadingPhoto -> "사진 올리는 중..."
                     isRecording -> "녹음 중... 버튼을 다시 누르면 전송됩니다."
                     isUploadingAudio -> "음성을 분석 중..."
                     lastRecordedFileName.isNotBlank() -> "최근 녹음 파일: $lastRecordedFileName"
-                    !sessionStarted -> "마이크를 누르면 음성 인터뷰가 시작돼요"
+                    !sessionStarted -> "마이크를 누르면 음성 문답이 시작돼요"
                     else -> "마이크 버튼을 눌러 실시간 녹음을 시작하세요"
                 },
                 fontSize = 16.sp,

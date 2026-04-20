@@ -218,7 +218,7 @@ fun SplashScreen(
             modifier = Modifier.alpha(alpha),
         ) {
             Text(
-                text = "StoryVenue",
+                text = "이야기마당",
                 fontSize = 36.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
@@ -267,7 +267,7 @@ fun LoginScreen(
         ) {
             Spacer(Modifier.height(80.dp))
             Text(
-                text = "StoryVenue",
+                text = "이야기마당",
                 fontSize = 32.sp,
                 fontWeight = FontWeight.Bold,
                 color = StoryVenueColors.Primary,

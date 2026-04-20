@@ -79,7 +79,7 @@ fun AvatarCircle(
         if (current != null) {
             Image(
                 bitmap = current,
-                contentDescription = "$name 프로필 사진",
+                contentDescription = "$name 사진",
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
