@@ -22,17 +22,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import com.capstone.storyvenue.ui.theme.SBAggroFamily
 import com.capstone.storyvenue.ui.theme.StoryVenueColors
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 data class InterviewSession(
@@ -56,6 +60,7 @@ data class InterviewSession(
     val status: String? = null,
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onNewInterview: () -> Unit = {},
@@ -72,22 +77,28 @@ fun HomeScreen(
     var userName by remember { mutableStateOf("이름") }
     var sessions by remember { mutableStateOf<List<InterviewSession>>(emptyList()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isRefreshing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(token) {
+    suspend fun loadHome() {
         if (token.isBlank()) {
             errorMessage = "로그인이 필요합니다."
-            return@LaunchedEffect
+            return
         }
-
         val profileResult = withContext(Dispatchers.IO) { ApiService.getProfile(token) }
         profileResult.onSuccess { userName = it.name.ifBlank { "이름" } }
             .onFailure { e -> errorMessage = e.message ?: "내정보를 불러오지 못했습니다." }
 
         val sessionsResult = withContext(Dispatchers.IO) { ApiService.getSessions(token) }
-        sessionsResult.onSuccess { sessions = it }
-            .onFailure { e -> errorMessage = e.message ?: "문답 목록을 불러오지 못했습니다." }
+        sessionsResult.onSuccess {
+            sessions = it
+            errorMessage = null
+        }.onFailure { e -> errorMessage = e.message ?: "문답 목록을 불러오지 못했습니다." }
     }
+
+    LaunchedEffect(token) { loadHome() }
+
     LaunchedEffect(errorMessage) {
         val msg = errorMessage
         if (!msg.isNullOrBlank()) {
@@ -108,10 +119,20 @@ fun HomeScreen(
             )
         }
     ) { innerPadding ->
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+                scope.launch {
+                    isRefreshing = true
+                    loadHome()
+                    isRefreshing = false
+                }
+            },
+            modifier = Modifier.fillMaxSize().padding(innerPadding),
+        ) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
                 .padding(horizontal = 20.dp),
         ) {
             item {
@@ -277,6 +298,7 @@ fun HomeScreen(
             }
 
             item { Spacer(Modifier.height(16.dp)) }
+        }
         }
     }
 }

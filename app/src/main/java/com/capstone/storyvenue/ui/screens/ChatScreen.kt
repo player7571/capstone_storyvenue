@@ -35,6 +35,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -91,11 +92,17 @@ fun ChatListScreen(
 
     var partners by remember { mutableStateOf<List<ChatPartner>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    var isRefreshing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
+    suspend fun loadPartners() {
         withContext(Dispatchers.IO) {
             ApiService.getChatPartners(token).onSuccess { partners = it }
         }
+    }
+
+    LaunchedEffect(Unit) {
+        loadPartners()
         isLoading = false
     }
 
@@ -139,37 +146,48 @@ fun ChatListScreen(
             Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = StoryVenueColors.Primary)
             }
-        } else if (partners.isEmpty()) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "이야기에서 새로운 사람들과",
-                        fontSize = 16.sp,
-                        color = StoryVenueColors.SubText,
-                        fontFamily = SBAggroFamily,
-                    )
-                    Text(
-                        text = "대화로 연결해보세요!",
-                        fontSize = 16.sp,
-                        color = StoryVenueColors.SubText,
-                        fontFamily = SBAggroFamily,
-                    )
-                }
-            }
         } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(horizontal = 16.dp),
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = {
+                    scope.launch {
+                        isRefreshing = true
+                        loadPartners()
+                        isRefreshing = false
+                    }
+                },
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
             ) {
-                item { Spacer(Modifier.height(8.dp)) }
-                items(partners) { partner ->
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                ) {
+                    if (partners.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier.fillParentMaxSize(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = "이야기에서 새로운 사람들과",
+                                        fontSize = 16.sp,
+                                        color = StoryVenueColors.SubText,
+                                        fontFamily = SBAggroFamily,
+                                    )
+                                    Text(
+                                        text = "대화로 연결해보세요!",
+                                        fontSize = 16.sp,
+                                        color = StoryVenueColors.SubText,
+                                        fontFamily = SBAggroFamily,
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        item { Spacer(Modifier.height(8.dp)) }
+                        items(partners) { partner ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -218,6 +236,8 @@ fun ChatListScreen(
                         }
                     }
                     Spacer(Modifier.height(8.dp))
+                }
+                    }
                 }
             }
         }
