@@ -1,7 +1,7 @@
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 
 from app.api.dependencies.auth import get_current_user_id
 from app.api.schemas.sessions import (
@@ -27,12 +27,18 @@ PHOTO_SESSION_TITLE = "사진 문답"
 PHOTO_SESSION_THEME = "photo"
 PHOTO_SESSION_TYPE = "photo"
 PHOTO_COMPLETED_STATUS = "completed"
+DELETED_SESSION_STATUS = "deleted"
 MAX_PHOTO_SIZE_BYTES = 5 * 1024 * 1024
 SIGNED_URL_EXPIRES_IN = 60 * 60 * 24 * 30
 SUPPORTED_IMAGE_TYPES = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
 }
+AUDIO_CACHE_DIR = Path(__file__).resolve().parents[3] / ".generated-audio"
+
+
+def _is_deleted_session(session: dict) -> bool:
+    return str(session.get("status") or "").strip().lower() == DELETED_SESSION_STATUS
 
 
 def _get_session_or_404(session_id: UUID, user_id: str) -> dict:
@@ -45,7 +51,7 @@ def _get_session_or_404(session_id: UUID, user_id: str) -> dict:
         .maybe_single()
         .execute()
     )
-    if not result.data:
+    if not result.data or _is_deleted_session(result.data):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="세션을 찾을 수 없습니다.",
@@ -213,6 +219,17 @@ def _store_memories(
     return len(inserted.data or rows)
 
 
+def _delete_generated_audio_files(session_id: UUID) -> None:
+    if not AUDIO_CACHE_DIR.exists():
+        return
+
+    for audio_file in AUDIO_CACHE_DIR.glob(f"{session_id}-*.mp3"):
+        try:
+            audio_file.unlink()
+        except OSError:
+            continue
+
+
 @router.post("", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
 async def create_session(
     body: SessionCreateRequest,
@@ -330,7 +347,8 @@ async def list_sessions(
             .order("created_at", desc=True)
             .execute()
         )
-        return [SessionResponse(**row) for row in (result.data or [])]
+        visible_rows = [row for row in (result.data or []) if not _is_deleted_session(row)]
+        return [SessionResponse(**row) for row in visible_rows]
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -343,23 +361,8 @@ async def get_session_detail(
     session_id: UUID,
     user_id: str = Depends(get_current_user_id),
 ):
-    sb = get_supabase()
-
     try:
-        result = (
-            sb.table("interview_sessions")
-            .select("*")
-            .eq("id", str(session_id))
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute()
-        )
-        if not result.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="세션을 찾을 수 없습니다.",
-            )
-        return SessionResponse(**result.data)
+        return SessionResponse(**_get_session_or_404(session_id, user_id))
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -367,6 +370,49 @@ async def get_session_detail(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="세션 상세 조회 중 오류가 발생했습니다.",
         ) from exc
+
+
+@router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_session(
+    session_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+):
+    session = _get_session_or_404(session_id, user_id)
+    sb = get_supabase()
+
+    try:
+        sb.table("session_messages").delete().eq("session_id", str(session_id)).execute()
+        sb.table("user_memories").delete().eq("user_id", user_id).eq(
+            "session_id", str(session_id)
+        ).execute()
+        _delete_generated_audio_files(session_id)
+
+        updated = (
+            sb.table("interview_sessions")
+            .update(
+                {
+                    "status": DELETED_SESSION_STATUS,
+                    "photo_url": None,
+                }
+            )
+            .eq("id", str(session_id))
+            .eq("user_id", user_id)
+            .execute()
+        )
+        if not updated.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="세션을 찾을 수 없습니다.",
+            )
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"문답 삭제 중 오류가 발생했습니다: {exc}",
+        ) from exc
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{session_id}/reply", response_model=PhotoSessionReplyResponse)

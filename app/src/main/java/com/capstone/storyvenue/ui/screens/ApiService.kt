@@ -306,6 +306,22 @@ object ApiService {
         }
     }
 
+    fun deleteSession(token: String, sessionId: String): Result<Unit> {
+        return try {
+            val response = client.newCall(
+                authDelete("$BASE_URL/sessions/$sessionId", token)
+            ).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "문답 삭제 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     fun createPhotoSession(
         token: String,
         imageBytes: ByteArray,

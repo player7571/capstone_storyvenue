@@ -18,18 +18,19 @@ def _get_session_or_404(session_id: UUID, user_id: str) -> dict:
     result = (
         get_supabase()
         .table("interview_sessions")
-        .select("id, user_id")
+        .select("id, user_id, status")
         .eq("id", str(session_id))
         .eq("user_id", user_id)
         .maybe_single()
         .execute()
     )
-    if not result.data:
+    session = result.data
+    if not session or str(session.get("status") or "").strip().lower() == "deleted":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="문답을 찾을 수 없습니다.",
         )
-    return result.data
+    return session
 
 
 def _get_chapter_or_404(chapter_id: UUID, user_id: str) -> dict:
