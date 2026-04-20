@@ -3,15 +3,19 @@ package com.capstone.storyvenue.ui.screens
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.media.MediaPlayer
 import android.media.MediaRecorder
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -48,7 +52,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -77,18 +84,40 @@ fun VoiceInterviewScreen(
     val token = prefs.getString("access_token", "") ?: ""
 
     var sessionId by remember { mutableStateOf(initialSessionId?.takeIf { it.isNotBlank() }) }
+    var sessionType by remember { mutableStateOf("voice") }
+    var photoUrl by remember { mutableStateOf<String?>(null) }
+    var photoBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var userText by remember { mutableStateOf("") }
-    var assistantText by remember { mutableStateOf("인터뷰 세션을 준비하고 있어요.") }
+    var assistantText by remember {
+        mutableStateOf(
+            if (initialSessionId.isNullOrBlank())
+                "마이크 버튼을 눌러 음성으로 시작하거나, 사진을 첨부해 대화를 시작하세요."
+            else
+                "인터뷰 세션을 불러오고 있어요."
+        )
+    }
     var latestAudioUrl by remember { mutableStateOf<String?>(null) }
     var lastRecordedFileName by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    var isPreparingSession by remember { mutableStateOf(initialSessionId.isNullOrBlank()) }
+    var isPreparingSession by remember { mutableStateOf(!initialSessionId.isNullOrBlank()) }
+    var isUploadingPhoto by remember { mutableStateOf(false) }
     var isRecording by remember { mutableStateOf(false) }
     var isUploadingAudio by remember { mutableStateOf(false) }
     var isPlayingAudio by remember { mutableStateOf(false) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var mediaRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
     var recordingFilePath by remember { mutableStateOf<String?>(null) }
+
+    fun loadPhotoThumbnail(url: String) {
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { ApiService.fetchImageBytes(url) }
+            result.onSuccess { bytes ->
+                runCatching {
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                }.getOrNull()?.let { photoBitmap = it }
+            }
+        }
+    }
 
     fun stopAndReleasePlayer() {
         mediaPlayer?.runCatching { stop() }
@@ -139,18 +168,7 @@ fun VoiceInterviewScreen(
         }
     }
 
-    fun startRecording() {
-        val currentSessionId = sessionId
-        if (token.isBlank()) {
-            errorMessage = "로그인이 필요합니다."
-            return
-        }
-        if (currentSessionId.isNullOrBlank()) {
-            errorMessage = "세션 준비가 완료된 후 다시 시도해주세요."
-            return
-        }
-        if (isPreparingSession || isUploadingAudio || isRecording) return
-
+    fun beginRecordingAfterSession(currentSessionId: String) {
         errorMessage = null
         val outputDir = File(context.cacheDir, "voice-recordings").apply { mkdirs() }
         val outputFile = File(outputDir, "recording_${System.currentTimeMillis()}.m4a")
@@ -173,6 +191,39 @@ fun VoiceInterviewScreen(
         } catch (_: Exception) {
             stopAndReleaseRecorder(deleteTempFile = true)
             errorMessage = "녹음을 시작하지 못했습니다. 마이크 권한 및 기기 상태를 확인해주세요."
+        }
+    }
+
+    fun startRecording() {
+        if (token.isBlank()) {
+            errorMessage = "로그인이 필요합니다."
+            return
+        }
+        if (isPreparingSession || isUploadingAudio || isRecording || isUploadingPhoto) return
+
+        val currentSessionId = sessionId
+        if (!currentSessionId.isNullOrBlank()) {
+            beginRecordingAfterSession(currentSessionId)
+            return
+        }
+
+        // 세션이 아직 없으면 음성 세션을 먼저 생성한 뒤 바로 녹음 시작
+        scope.launch {
+            isPreparingSession = true
+            errorMessage = null
+            val title = "음성 인터뷰 ${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))}"
+            val result = withContext(Dispatchers.IO) {
+                ApiService.createSession(token = token, title = title, theme = "자서전")
+            }
+            isPreparingSession = false
+            result.onSuccess { created ->
+                sessionId = created.id
+                sessionType = "voice"
+                assistantText = "세션이 시작되었습니다. 편하게 이야기해주세요."
+                beginRecordingAfterSession(created.id)
+            }.onFailure { e ->
+                errorMessage = e.message ?: "인터뷰 세션 생성에 실패했습니다."
+            }
         }
     }
 
@@ -224,6 +275,64 @@ fun VoiceInterviewScreen(
         }
     }
 
+    fun attachPhoto(uri: Uri) {
+        if (token.isBlank()) {
+            errorMessage = "로그인이 필요합니다."
+            return
+        }
+        if (!sessionId.isNullOrBlank()) {
+            errorMessage = "이미 세션이 시작되어 사진을 첨부할 수 없습니다."
+            return
+        }
+        if (isPreparingSession || isUploadingPhoto) return
+
+        scope.launch {
+            isUploadingPhoto = true
+            errorMessage = null
+
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val resolver = context.contentResolver
+                    val mime = resolver.getType(uri) ?: "image/jpeg"
+                    val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: throw Exception("이미지를 읽을 수 없습니다.")
+                    if (bytes.size > 5 * 1024 * 1024) {
+                        throw Exception("이미지 크기는 5MB 이하여야 합니다.")
+                    }
+                    val ext = when {
+                        mime.contains("png") -> "png"
+                        else -> "jpg"
+                    }
+                    ApiService.createPhotoSession(
+                        token = token,
+                        imageBytes = bytes,
+                        contentType = mime,
+                        fileName = "photo_${System.currentTimeMillis()}.$ext",
+                    )
+                }.getOrElse { Result.failure(it) }
+            }
+
+            isUploadingPhoto = false
+            result.onSuccess { started ->
+                sessionId = started.sessionId
+                sessionType = "photo"
+                photoUrl = started.photoUrl.takeIf { it.isNotBlank() }
+                assistantText = started.aiMessage.ifBlank {
+                    "사진을 분석했어요. 마이크 버튼을 눌러 답변을 녹음해주세요."
+                }
+                photoUrl?.let { loadPhotoThumbnail(it) }
+            }.onFailure { e ->
+                errorMessage = e.message ?: "사진 업로드에 실패했습니다."
+            }
+        }
+    }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri != null) attachPhoto(uri)
+    }
+
     val micPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -241,30 +350,29 @@ fun VoiceInterviewScreen(
             return@LaunchedEffect
         }
 
-        if (!initialSessionId.isNullOrBlank()) {
-            sessionId = initialSessionId
+        if (initialSessionId.isNullOrBlank()) {
+            // 신규 진입 — 세션은 사용자가 첫 행동(녹음/사진)을 할 때 생성
             isPreparingSession = false
-            assistantText = "인터뷰를 이어갈 수 있어요. 마이크 버튼을 눌러 녹음을 시작하세요."
             return@LaunchedEffect
         }
 
         isPreparingSession = true
-        val title = "음성 인터뷰 ${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))}"
         val result = withContext(Dispatchers.IO) {
-            ApiService.createSession(
-                token = token,
-                title = title,
-                theme = "자서전",
-            )
+            ApiService.getSessionDetail(token = token, sessionId = initialSessionId)
         }
-
         isPreparingSession = false
-        result.onSuccess { created ->
-            sessionId = created.id
-            assistantText = "세션이 시작되었습니다. 마이크 버튼을 눌러 녹음을 시작하세요."
+        result.onSuccess { detail ->
+            sessionId = detail.id
+            sessionType = detail.sessionType
+            photoUrl = detail.photoUrl
+            assistantText = if (detail.sessionType == "photo")
+                "사진 인터뷰를 이어갈 수 있어요. 마이크 버튼을 눌러 답변을 녹음하세요."
+            else
+                "인터뷰를 이어갈 수 있어요. 마이크 버튼을 눌러 녹음을 시작하세요."
+            detail.photoUrl?.let { loadPhotoThumbnail(it) }
         }.onFailure { e ->
-            errorMessage = e.message ?: "인터뷰 세션 생성에 실패했습니다."
-            assistantText = "세션 생성에 실패했습니다. 뒤로가기 후 다시 시도해주세요."
+            errorMessage = e.message ?: "세션 정보를 불러오지 못했습니다."
+            assistantText = "세션을 불러오지 못했습니다. 뒤로가기 후 다시 시도해주세요."
         }
     }
 
@@ -289,13 +397,16 @@ fun VoiceInterviewScreen(
         label = "pulseScale",
     )
 
+    val sessionStarted = !sessionId.isNullOrBlank()
+    val canAttachPhoto = !sessionStarted && !isPreparingSession && !isUploadingPhoto && !isRecording && !isUploadingAudio
+
     Scaffold(
         containerColor = StoryVenueColors.Background,
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        text = "인터뷰 중",
+                        text = if (sessionType == "photo") "사진 인터뷰 중" else "인터뷰 중",
                         fontWeight = FontWeight.Bold,
                         color = StoryVenueColors.OnSurface,
                         fontFamily = SBAggroFamily,
@@ -305,7 +416,7 @@ fun VoiceInterviewScreen(
                 navigationIcon = {
                     TextButton(
                         onClick = onBack,
-                        enabled = !isRecording && !isUploadingAudio,
+                        enabled = !isRecording && !isUploadingAudio && !isUploadingPhoto,
                     ) {
                         Text(
                             text = "<",
@@ -330,6 +441,32 @@ fun VoiceInterviewScreen(
                 .padding(horizontal = 24.dp),
         ) {
             Spacer(Modifier.height(16.dp))
+
+            if (photoUrl != null) {
+                Box(
+                    modifier = Modifier
+                        .size(width = 160.dp, height = 120.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(StoryVenueColors.Surface),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val bitmap = photoBitmap
+                    if (bitmap != null) {
+                        Image(
+                            bitmap = bitmap,
+                            contentDescription = "첨부된 사진",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        Text(
+                            text = "📷",
+                            fontSize = 32.sp,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+            }
 
             Card(
                 modifier = Modifier
@@ -405,12 +542,12 @@ fun VoiceInterviewScreen(
                     .background(
                         when {
                             isRecording -> StoryVenueColors.Error
-                            isPreparingSession || isUploadingAudio -> StoryVenueColors.Divider
+                            isPreparingSession || isUploadingAudio || isUploadingPhoto -> StoryVenueColors.Divider
                             else -> StoryVenueColors.Surface
                         }
                     )
                     .clickable(
-                        enabled = !isPreparingSession && !isUploadingAudio,
+                        enabled = !isPreparingSession && !isUploadingAudio && !isUploadingPhoto,
                     ) {
                         if (isRecording) {
                             stopRecordingAndUpload()
@@ -440,18 +577,40 @@ fun VoiceInterviewScreen(
             Text(
                 text = when {
                     isPreparingSession -> "세션 생성 중..."
+                    isUploadingPhoto -> "사진 업로드 중..."
                     isRecording -> "녹음 중... 버튼을 다시 누르면 전송됩니다."
                     isUploadingAudio -> "음성을 분석 중..."
                     lastRecordedFileName.isNotBlank() -> "최근 녹음 파일: $lastRecordedFileName"
+                    !sessionStarted -> "마이크를 누르면 음성 인터뷰가 시작돼요"
                     else -> "마이크 버튼을 눌러 실시간 녹음을 시작하세요"
                 },
                 fontSize = 16.sp,
-                color = if (isRecording || isUploadingAudio || isPreparingSession) StoryVenueColors.Error else StoryVenueColors.SubText,
+                color = if (isRecording || isUploadingAudio || isPreparingSession || isUploadingPhoto)
+                    StoryVenueColors.Error else StoryVenueColors.SubText,
                 fontFamily = SBAggroFamily,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
+
+            if (canAttachPhoto) {
+                Spacer(Modifier.height(12.dp))
+                TextButton(
+                    onClick = {
+                        photoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                ) {
+                    Text(
+                        text = "📷  사진으로 시작하기",
+                        fontFamily = SBAggroFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = StoryVenueColors.Primary,
+                        fontSize = 16.sp,
+                    )
+                }
+            }
 
             if (userText.isNotBlank()) {
                 Spacer(Modifier.height(16.dp))
@@ -499,7 +658,7 @@ fun VoiceInterviewScreen(
             StoryButton(
                 text = "이야기 생성하기",
                 onClick = {
-                    if (!isRecording && !isUploadingAudio) onGenerateChapter()
+                    if (!isRecording && !isUploadingAudio && !isUploadingPhoto) onGenerateChapter()
                 },
                 isLoading = false,
             )

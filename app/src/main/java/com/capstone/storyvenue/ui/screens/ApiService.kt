@@ -268,6 +268,89 @@ object ApiService {
         }
     }
 
+    fun createPhotoSession(
+        token: String,
+        imageBytes: ByteArray,
+        contentType: String,
+        fileName: String,
+    ): Result<PhotoSessionStartData> {
+        return try {
+            val mediaType = contentType.toMediaTypeOrNull() ?: DEFAULT_BINARY
+            val multipartBody = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart(
+                    "image_file",
+                    fileName,
+                    imageBytes.toRequestBody(mediaType),
+                )
+                .build()
+
+            val request = Request.Builder()
+                .url("$BASE_URL/sessions/photo")
+                .addHeader("Authorization", "Bearer $token")
+                .post(multipartBody)
+                .build()
+
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                val json = JSONObject(body)
+                Result.success(
+                    PhotoSessionStartData(
+                        sessionId = json.getString("session_id"),
+                        photoUrl = json.optString("photo_url", ""),
+                        aiMessage = json.optString("ai_message", ""),
+                        createdAt = json.optString("created_at", ""),
+                    )
+                )
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "사진 인터뷰 시작에 실패했습니다")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun getSessionDetail(token: String, sessionId: String): Result<SessionDetailData> {
+        return try {
+            val response = client.newCall(
+                authGet("$BASE_URL/sessions/$sessionId", token)
+            ).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                val json = JSONObject(body)
+                Result.success(
+                    SessionDetailData(
+                        id = json.getString("id"),
+                        sessionType = json.optCleanString("session_type").ifBlank { "voice" },
+                        photoUrl = json.optCleanString("photo_url").ifBlank { null },
+                        status = json.optCleanString("status"),
+                    )
+                )
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "세션 상세 조회 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun fetchImageBytes(url: String): Result<ByteArray> {
+        return try {
+            val request = Request.Builder().url(url).get().build()
+            val response = client.newCall(request).execute()
+            if (response.isSuccessful) {
+                val bytes = response.body?.bytes() ?: ByteArray(0)
+                if (bytes.isEmpty()) Result.failure(Exception("이미지 응답이 비어 있습니다."))
+                else Result.success(bytes)
+            } else {
+                Result.failure(Exception("이미지 로드 실패 (${response.code})"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     fun voiceTurn(
         token: String,
         sessionId: String,
@@ -637,6 +720,20 @@ data class VoiceTurnData(
     val userText: String,
     val assistantText: String,
     val audioUrl: String,
+)
+
+data class PhotoSessionStartData(
+    val sessionId: String,
+    val photoUrl: String,
+    val aiMessage: String,
+    val createdAt: String,
+)
+
+data class SessionDetailData(
+    val id: String,
+    val sessionType: String,
+    val photoUrl: String?,
+    val status: String,
 )
 
 data class ChatMessageData(
