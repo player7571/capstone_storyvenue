@@ -19,7 +19,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -36,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -262,7 +267,12 @@ fun StoryBottomNavBar(
     onProfileClick: () -> Unit = {},
 ) {
     val items = listOf("이야기", "글쓰기", "대화", "내정보")
-    val icons = listOf("📖", "🏠", "💬", "👤")
+    val icons: List<ImageVector> = listOf(
+        Icons.AutoMirrored.Filled.MenuBook,
+        Icons.Filled.Edit,
+        Icons.AutoMirrored.Filled.Chat,
+        Icons.Filled.Person,
+    )
 
     Row(
         modifier = Modifier
@@ -272,6 +282,7 @@ fun StoryBottomNavBar(
         horizontalArrangement = Arrangement.SpaceAround,
     ) {
         items.forEachIndexed { index, label ->
+            val tint = if (index == selectedIndex) StoryVenueColors.Primary else StoryVenueColors.SubText
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
@@ -285,12 +296,17 @@ fun StoryBottomNavBar(
                         }
                     },
             ) {
-                Text(text = icons[index], fontSize = 22.sp)
-                Spacer(Modifier.height(2.dp))
+                Icon(
+                    imageVector = icons[index],
+                    contentDescription = label,
+                    tint = tint,
+                    modifier = Modifier.size(24.dp),
+                )
+                Spacer(Modifier.height(4.dp))
                 Text(
                     text = label,
                     fontSize = 11.sp,
-                    color = if (index == selectedIndex) StoryVenueColors.Primary else StoryVenueColors.SubText,
+                    color = tint,
                     fontFamily = SBAggroFamily,
                     fontWeight = if (index == selectedIndex) FontWeight.Bold else FontWeight.Normal,
                 )
