@@ -132,7 +132,7 @@ fun StoryVenueNavGraph(
             FeedDetailScreen(
                 postId = postId,
                 onBack = { navController.popBackStack() },
-                onChatClick = { navController.navigate(Routes.CHAT_LIST) },
+                onChatClick = { authorId -> navController.navigate(Routes.chatRoom(authorId)) },
             )
         }
         composable(Routes.CHAT_LIST) {
