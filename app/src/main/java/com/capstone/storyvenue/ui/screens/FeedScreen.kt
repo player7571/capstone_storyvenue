@@ -64,6 +64,7 @@ import kotlinx.coroutines.withContext
 
 data class FeedPost(
     val id: String,
+    val authorId: String = "",
     val authorName: String,
     val authorAvatarUrl: String? = null,
     val title: String,
@@ -257,7 +258,7 @@ fun FeedPostCard(
 fun FeedDetailScreen(
     postId: String = "",
     onBack: () -> Unit = {},
-    onChatClick: () -> Unit = {},
+    onChatClick: (authorId: String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val token = context.getSharedPreferences("storyvenue", android.content.Context.MODE_PRIVATE)
@@ -401,7 +402,9 @@ fun FeedDetailScreen(
                             color = StoryVenueColors.OnSurface,
                             fontFamily = SBAggroFamily,
                             fontWeight = FontWeight.Bold,
-                            modifier = Modifier.clickable { onChatClick() },
+                            modifier = Modifier.clickable {
+                                post?.authorId?.takeIf { it.isNotBlank() }?.let { onChatClick(it) }
+                            },
                         )
                     }
                     Spacer(Modifier.height(16.dp))

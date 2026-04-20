@@ -514,9 +514,96 @@ object ApiService {
         }
     }
 
+    // ── Chapters / Books ─────────────────────────────
+    fun listChapters(token: String): Result<List<ChapterDraftData>> {
+        return try {
+            val response = client.newCall(authGet("$BASE_URL/chapters", token)).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                val arr = JSONArray(body)
+                val list = mutableListOf<ChapterDraftData>()
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    list.add(
+                        ChapterDraftData(
+                            id = obj.getString("id"),
+                            title = obj.optString("title", ""),
+                            content = obj.optString("content", ""),
+                            chapterType = obj.optString("chapter_type", ""),
+                            createdAt = obj.optString("created_at", ""),
+                        )
+                    )
+                }
+                Result.success(list)
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "챕터 목록 조회 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun compileBook(
+        token: String,
+        chapterIds: List<String>,
+        title: String,
+    ): Result<BookDetailData> {
+        return try {
+            val payload = JSONObject().apply {
+                put("chapter_ids", JSONArray(chapterIds))
+                put("title", title)
+            }.toString()
+            val response = client.newCall(
+                authPost("$BASE_URL/book/compile", token, payload)
+            ).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                val json = JSONObject(body)
+                Result.success(
+                    BookDetailData(
+                        id = json.getString("id"),
+                        title = json.optString("title", ""),
+                        subtitle = json.optCleanString("subtitle").ifBlank { null },
+                    )
+                )
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "책 만들기 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun createFeedPost(
+        token: String,
+        bookId: String,
+        title: String,
+        preview: String,
+    ): Result<FeedPost> {
+        return try {
+            val payload = JSONObject().apply {
+                put("book_id", bookId)
+                put("title", title)
+                put("preview", preview)
+            }.toString()
+            val response = client.newCall(
+                authPost("$BASE_URL/feed", token, payload)
+            ).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                Result.success(parseFeedPost(JSONObject(body)))
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "게시 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     // ── Feed ─────────────────────────────────────────
     private fun parseFeedPost(obj: JSONObject): FeedPost = FeedPost(
         id = obj.getString("id"),
+        authorId = obj.optString("user_id", ""),
         authorName = obj.optString("author_name", "익명"),
         authorAvatarUrl = obj.optCleanString("author_avatar_url").ifBlank { null },
         title = obj.optString("title", ""),
@@ -878,4 +965,18 @@ data class ChatMessageData(
     val senderId: String,
     val content: String,
     val timeAgo: String,
+)
+
+data class ChapterDraftData(
+    val id: String,
+    val title: String,
+    val content: String,
+    val chapterType: String,
+    val createdAt: String,
+)
+
+data class BookDetailData(
+    val id: String,
+    val title: String,
+    val subtitle: String?,
 )
