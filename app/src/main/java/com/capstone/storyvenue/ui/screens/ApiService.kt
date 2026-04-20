@@ -147,19 +147,20 @@ object ApiService {
     }
 
     // ── Profile ──────────────────────────────────────
+    private fun parseProfile(json: JSONObject) = ProfileData(
+        id = json.getString("id"),
+        name = json.optCleanString("name"),
+        email = json.optCleanString("email"),
+        avatarUrl = json.optCleanString("avatar_url").ifBlank { null },
+    )
+
     fun getProfile(token: String): Result<ProfileData> {
         return try {
             val response = client.newCall(authGet("$BASE_URL/users/me", token)).execute()
             val body = response.body?.string() ?: ""
             val json = JSONObject(body)
             if (response.isSuccessful) {
-                Result.success(
-                    ProfileData(
-                        id = json.getString("id"),
-                        name = json.optCleanString("name"),
-                        email = json.optCleanString("email"),
-                    )
-                )
+                Result.success(parseProfile(json))
             } else {
                 Result.failure(Exception(parseErrorMessage(body, "프로필 조회 실패")))
             }
@@ -177,15 +178,42 @@ object ApiService {
             val body = response.body?.string() ?: ""
             val json = JSONObject(body)
             if (response.isSuccessful) {
-                Result.success(
-                    ProfileData(
-                        id = json.getString("id"),
-                        name = json.optCleanString("name"),
-                        email = json.optCleanString("email"),
-                    )
-                )
+                Result.success(parseProfile(json))
             } else {
                 Result.failure(Exception(parseErrorMessage(body, "프로필 수정 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun uploadAvatar(
+        token: String,
+        imageBytes: ByteArray,
+        contentType: String,
+        fileName: String,
+    ): Result<ProfileData> {
+        return try {
+            val mediaType = contentType.toMediaTypeOrNull() ?: DEFAULT_BINARY
+            val multipartBody = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart(
+                    "image_file",
+                    fileName,
+                    imageBytes.toRequestBody(mediaType),
+                )
+                .build()
+            val request = Request.Builder()
+                .url("$BASE_URL/users/me/avatar")
+                .addHeader("Authorization", "Bearer $token")
+                .post(multipartBody)
+                .build()
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                Result.success(parseProfile(JSONObject(body)))
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "프로필 사진 업로드 실패")))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -745,6 +773,7 @@ data class ProfileData(
     val id: String,
     val name: String,
     val email: String,
+    val avatarUrl: String? = null,
 )
 
 data class SessionData(

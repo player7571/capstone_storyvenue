@@ -1,5 +1,10 @@
 package com.capstone.storyvenue.ui.screens
 
+import android.graphics.BitmapFactory
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,6 +28,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -42,6 +48,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -71,6 +80,9 @@ fun ProfileScreen(
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var userName by remember { mutableStateOf("") }
     var userEmail by remember { mutableStateOf("") }
+    var avatarUrl by remember { mutableStateOf<String?>(null) }
+    var avatarBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+    var isUploadingAvatar by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var infoMessage by remember { mutableStateOf<String?>(null) }
     var showLogoutDialog by remember { mutableStateOf(false) }
@@ -79,6 +91,17 @@ fun ProfileScreen(
     var isSavingEdit by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var isDeleting by remember { mutableStateOf(false) }
+
+    fun loadAvatar(url: String) {
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { ApiService.fetchImageBytes(url) }
+            result.onSuccess { bytes ->
+                runCatching {
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                }.getOrNull()?.let { avatarBitmap = it }
+            }
+        }
+    }
 
     LaunchedEffect(token) {
         if (token.isBlank()) {
@@ -90,8 +113,49 @@ fun ProfileScreen(
             userName = it.name
             userEmail = it.email
             editName = it.name
+            avatarUrl = it.avatarUrl
+            it.avatarUrl?.let { url -> loadAvatar(url) }
         }.onFailure { e ->
             errorMessage = e.message ?: "프로필을 불러오지 못했습니다."
+        }
+    }
+
+    val avatarPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri == null || token.isBlank() || isUploadingAvatar) return@rememberLauncherForActivityResult
+        scope.launch {
+            isUploadingAvatar = true
+            errorMessage = null
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val resolver = context.contentResolver
+                    val mime = resolver.getType(uri) ?: "image/jpeg"
+                    val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: throw Exception("이미지를 읽을 수 없습니다.")
+                    if (bytes.size > 5 * 1024 * 1024) {
+                        throw Exception("이미지 크기는 5MB 이하여야 합니다.")
+                    }
+                    val ext = if (mime.contains("png")) "png" else "jpg"
+                    ApiService.uploadAvatar(
+                        token = token,
+                        imageBytes = bytes,
+                        contentType = mime,
+                        fileName = "avatar_${System.currentTimeMillis()}.$ext",
+                    )
+                }.getOrElse { Result.failure(it) }
+            }
+            isUploadingAvatar = false
+            result.onSuccess { profile ->
+                userName = profile.name
+                userEmail = profile.email
+                avatarUrl = profile.avatarUrl
+                avatarBitmap = null
+                profile.avatarUrl?.let { url -> loadAvatar(url) }
+                infoMessage = "프로필 사진이 변경되었습니다."
+            }.onFailure { e ->
+                errorMessage = e.message ?: "프로필 사진 업로드에 실패했습니다."
+            }
         }
     }
 
@@ -334,15 +398,39 @@ fun ProfileScreen(
                     .size(100.dp)
                     .clip(CircleShape)
                     .background(StoryVenueColors.Primary)
-                    .border(3.dp, StoryVenueColors.PrimaryLight, CircleShape),
+                    .border(3.dp, StoryVenueColors.PrimaryLight, CircleShape)
+                    .clickable(enabled = !isUploadingAvatar) {
+                        avatarPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Person,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(60.dp),
-                )
+                val bitmap = avatarBitmap
+                when {
+                    isUploadingAvatar -> CircularProgressIndicator(color = Color.White)
+                    bitmap != null -> Image(
+                        bitmap = bitmap,
+                        contentDescription = "프로필 사진",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize().clip(CircleShape),
+                    )
+                    else -> Icon(
+                        imageVector = Icons.Filled.Person,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(60.dp),
+                    )
+                }
             }
+
+            Spacer(Modifier.height(8.dp))
+
+            Text(
+                text = if (avatarUrl == null) "사진 추가하기" else "사진 변경하기",
+                fontSize = 12.sp,
+                color = StoryVenueColors.SubText,
+                fontFamily = SBAggroFamily,
+            )
 
             Spacer(Modifier.height(16.dp))
 

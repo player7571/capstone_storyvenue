@@ -8,6 +8,7 @@ class UserProfileResponse(BaseModel):
     id: UUID
     name: str | None = None
     email: str | None = None
+    avatar_url: str | None = None
     created_at: datetime
 
 
