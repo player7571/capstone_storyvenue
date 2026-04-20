@@ -67,7 +67,13 @@ def _to_korean_error_message(exc: Exception, default_message: str) -> str:
 
 @router.post("/signup", response_model=SignupResponse)
 def signup(payload: SignupRequest) -> SignupResponse:
-    anon_supabase = get_supabase_anon_client()
+    try:
+        anon_supabase = get_supabase_anon_client()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="서버 인증 설정이 올바르지 않습니다. 관리자에게 문의해주세요.",
+        ) from exc
 
     try:
         response = anon_supabase.auth.sign_up(
@@ -116,7 +122,13 @@ def signup(payload: SignupRequest) -> SignupResponse:
 
 @router.post("/login", response_model=LoginResponse)
 def login(payload: LoginRequest) -> LoginResponse:
-    supabase = get_supabase_anon_client()
+    try:
+        supabase = get_supabase_anon_client()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="서버 인증 설정이 올바르지 않습니다. 관리자에게 문의해주세요.",
+        ) from exc
 
     try:
         response = supabase.auth.sign_in_with_password(

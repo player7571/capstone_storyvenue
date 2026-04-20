@@ -65,6 +65,7 @@ import androidx.core.content.ContextCompat
 import com.capstone.storyvenue.ui.theme.SBAggroFamily
 import com.capstone.storyvenue.ui.theme.StoryVenueColors
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -76,18 +77,32 @@ import java.time.format.DateTimeFormatter
 fun VoiceInterviewScreen(
     initialSessionId: String? = null,
     onBack: () -> Unit = {},
-    onGenerateChapter: () -> Unit = {},
+    onGenerateChapter: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val prefs = context.getSharedPreferences("storyvenue", Context.MODE_PRIVATE)
     val token = prefs.getString("access_token", "") ?: ""
 
+    val interviewQuestions = listOf(
+        "어린 시절 가장 따뜻하게 기억나는 집의 풍경은 어떤 모습이었나요?",
+        "가족과 함께했던 순간 중 아직도 자주 떠오르는 장면이 있나요?",
+        "학창 시절의 나를 가장 많이 바꾼 사건이나 만남은 무엇이었나요?",
+        "청년기에 스스로에게 가장 큰 도전이었던 선택은 무엇이었나요?",
+        "일을 하며 가장 큰 보람을 느낀 순간은 언제였나요?",
+        "반대로 많이 힘들었던 시기를 어떻게 버텨냈는지 들려주세요.",
+        "누군가에게 받은 사랑이나 배려 중 평생 잊지 못할 일은 무엇인가요?",
+        "가족에게 꼭 전하고 싶은 삶의 교훈이나 가치관이 있다면 무엇인가요?",
+        "지금의 나를 가장 잘 설명해주는 습관 또는 태도는 무엇인가요?",
+        "앞으로 가족과 함께 남기고 싶은 추억이나 바람이 있다면 들려주세요.",
+    )
+
     var sessionId by remember { mutableStateOf(initialSessionId?.takeIf { it.isNotBlank() }) }
     var sessionType by remember { mutableStateOf("voice") }
     var photoUrl by remember { mutableStateOf<String?>(null) }
     var photoBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var userText by remember { mutableStateOf("") }
+    var currentQuestionIndex by remember { mutableStateOf(1) }
     var assistantText by remember {
         mutableStateOf(
             if (initialSessionId.isNullOrBlank())
@@ -98,6 +113,7 @@ fun VoiceInterviewScreen(
     }
     var latestAudioUrl by remember { mutableStateOf<String?>(null) }
     var lastRecordedFileName by remember { mutableStateOf("") }
+    var recordingSeconds by remember { mutableStateOf(0) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isPreparingSession by remember { mutableStateOf(!initialSessionId.isNullOrBlank()) }
     var isUploadingPhoto by remember { mutableStateOf(false) }
@@ -187,6 +203,7 @@ fun VoiceInterviewScreen(
             mediaRecorder = recorder
             recordingFilePath = outputFile.absolutePath
             lastRecordedFileName = outputFile.name
+            recordingSeconds = 0
             isRecording = true
         } catch (_: Exception) {
             stopAndReleaseRecorder(deleteTempFile = true)
@@ -269,6 +286,7 @@ fun VoiceInterviewScreen(
                 userText = voice.userText
                 assistantText = voice.assistantText
                 latestAudioUrl = voice.audioUrl
+                currentQuestionIndex = (currentQuestionIndex + 1).coerceAtMost(interviewQuestions.size)
             }.onFailure { e ->
                 errorMessage = e.message ?: "음성 인터뷰 처리에 실패했습니다."
             }
@@ -317,6 +335,7 @@ fun VoiceInterviewScreen(
                 sessionId = started.sessionId
                 sessionType = "photo"
                 photoUrl = started.photoUrl.takeIf { it.isNotBlank() }
+                currentQuestionIndex = 1
                 assistantText = started.aiMessage.ifBlank {
                     "사진을 분석했어요. 마이크 버튼을 눌러 답변을 녹음해주세요."
                 }
@@ -365,14 +384,40 @@ fun VoiceInterviewScreen(
             sessionId = detail.id
             sessionType = detail.sessionType
             photoUrl = detail.photoUrl
-            assistantText = if (detail.sessionType == "photo")
-                "사진 인터뷰를 이어갈 수 있어요. 마이크 버튼을 눌러 답변을 녹음하세요."
-            else
-                "인터뷰를 이어갈 수 있어요. 마이크 버튼을 눌러 녹음을 시작하세요."
-            detail.photoUrl?.let { loadPhotoThumbnail(it) }
+            scope.launch {
+                val messagesResult = withContext(Dispatchers.IO) {
+                    ApiService.getSessionMessages(token = token, sessionId = detail.id)
+                }
+                messagesResult.onSuccess { messages ->
+                    val userTurnCount = messages.count { it.role == "user" }
+                    currentQuestionIndex = (userTurnCount + 1).coerceAtMost(interviewQuestions.size)
+                    messages.lastOrNull { it.role == "assistant" }?.content?.takeIf { it.isNotBlank() }?.let {
+                        assistantText = it
+                    } ?: run {
+                        assistantText = if (detail.sessionType == "photo")
+                            "사진 인터뷰를 이어갈 수 있어요. 마이크 버튼을 눌러 답변을 녹음하세요."
+                        else
+                            "인터뷰를 이어갈 수 있어요. 마이크 버튼을 눌러 녹음을 시작하세요."
+                    }
+                }.onFailure {
+                    assistantText = if (detail.sessionType == "photo")
+                        "사진 인터뷰를 이어갈 수 있어요. 마이크 버튼을 눌러 답변을 녹음하세요."
+                    else
+                        "인터뷰를 이어갈 수 있어요. 마이크 버튼을 눌러 녹음을 시작하세요."
+                }
+                detail.photoUrl?.let { loadPhotoThumbnail(it) }
+            }
         }.onFailure { e ->
             errorMessage = e.message ?: "세션 정보를 불러오지 못했습니다."
             assistantText = "세션을 불러오지 못했습니다. 뒤로가기 후 다시 시도해주세요."
+        }
+    }
+
+    LaunchedEffect(isRecording) {
+        if (!isRecording) return@LaunchedEffect
+        while (isRecording) {
+            delay(1000)
+            recordingSeconds += 1
         }
     }
 
@@ -383,8 +428,12 @@ fun VoiceInterviewScreen(
         }
     }
 
-    val currentProgress = 3
-    val totalQuestions = 10
+    val totalQuestions = interviewQuestions.size
+    val currentProgress = currentQuestionIndex.coerceIn(1, totalQuestions)
+    val currentQuestion = interviewQuestions.getOrElse(currentProgress - 1) {
+        "인터뷰를 진행해주세요."
+    }
+    val recordingTimeText = String.format("%02d:%02d", recordingSeconds / 60, recordingSeconds % 60)
 
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val scale by infiniteTransition.animateFloat(
@@ -483,7 +532,7 @@ fun VoiceInterviewScreen(
                         .padding(24.dp),
                 ) {
                     Text(
-                        text = assistantText,
+                        text = "Q$currentProgress. $currentQuestion",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = StoryVenueColors.OnSurface,
@@ -578,7 +627,7 @@ fun VoiceInterviewScreen(
                 text = when {
                     isPreparingSession -> "세션 생성 중..."
                     isUploadingPhoto -> "사진 업로드 중..."
-                    isRecording -> "녹음 중... 버튼을 다시 누르면 전송됩니다."
+                    isRecording -> "녹음 중 $recordingTimeText · 버튼을 다시 누르면 종료/전송됩니다."
                     isUploadingAudio -> "음성을 분석 중..."
                     lastRecordedFileName.isNotBlank() -> "최근 녹음 파일: $lastRecordedFileName"
                     !sessionStarted -> "마이크를 누르면 음성 인터뷰가 시작돼요"
@@ -624,6 +673,18 @@ fun VoiceInterviewScreen(
                 )
             }
 
+            if (assistantText.isNotBlank()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "AI 인터뷰어: $assistantText",
+                    fontSize = 14.sp,
+                    color = StoryVenueColors.Primary,
+                    fontFamily = SBAggroFamily,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
             if (!errorMessage.isNullOrBlank()) {
                 Spacer(Modifier.height(10.dp))
                 Text(
@@ -658,7 +719,13 @@ fun VoiceInterviewScreen(
             StoryButton(
                 text = "이야기 생성하기",
                 onClick = {
-                    if (!isRecording && !isUploadingAudio && !isUploadingPhoto) onGenerateChapter()
+                    if (isRecording || isUploadingAudio || isUploadingPhoto) return@StoryButton
+                    val currentSessionId = sessionId
+                    if (currentSessionId.isNullOrBlank()) {
+                        errorMessage = "세션이 준비되지 않았습니다. 잠시 후 다시 시도해주세요."
+                    } else {
+                        onGenerateChapter(currentSessionId)
+                    }
                 },
                 isLoading = false,
             )
