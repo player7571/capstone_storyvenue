@@ -20,19 +20,34 @@ async def list_comments(
     sb = get_supabase()
     result = (
         sb.table("feed_comments")
-        .select("*, profiles(name, avatar_url)")
+        .select("*")
         .eq("post_id", str(post_id))
         .order("created_at", desc=False)
         .execute()
     )
+    rows = result.data or []
+    unique_ids = list({row.get("user_id") for row in rows if row.get("user_id")})
+    profiles_map: dict[str, dict] = {}
+    if unique_ids:
+        profiles_result = (
+            sb.table("profiles")
+            .select("id, name, avatar_url")
+            .in_("id", unique_ids)
+            .execute()
+        )
+        profiles_map = {str(p["id"]): p for p in (profiles_result.data or [])}
+
     comments = []
-    for row in result.data:
-        profile = row.pop("profiles", None)
+    for row in rows:
+        profile = profiles_map.get(str(row.get("user_id"))) or {}
+        merged = {**row}
+        merged.pop("author_name", None)
+        merged.pop("author_avatar_url", None)
         comments.append(
             CommentResponse(
-                **row,
-                author_name=profile.get("name") if profile else None,
-                author_avatar_url=profile.get("avatar_url") if profile else None,
+                **merged,
+                author_name=profile.get("name") or row.get("author_name"),
+                author_avatar_url=profile.get("avatar_url"),
             )
         )
     return comments
@@ -61,7 +76,8 @@ async def create_comment(
         .maybe_single()
         .execute()
     )
-    if not post.data:
+    post_data = getattr(post, "data", None) if post else None
+    if not post_data:
         raise HTTPException(status_code=404, detail="게시물을 찾을 수 없습니다.")
 
     # 안전 검사
@@ -72,6 +88,18 @@ async def create_comment(
             detail=f"부적절한 콘텐츠가 감지되었습니다: {safety['reason']}",
         )
 
+    # 작성자 이름/아바타 조회 (insert 전에 먼저 — author_name 컬럼이 NOT NULL)
+    profile = (
+        sb.table("profiles")
+        .select("name, avatar_url")
+        .eq("id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    profile_data = getattr(profile, "data", None) if profile else None
+    author_name = (profile_data or {}).get("name") or "익명"
+    author_avatar_url = (profile_data or {}).get("avatar_url")
+
     # 댓글 저장
     row = (
         sb.table("feed_comments")
@@ -80,40 +108,37 @@ async def create_comment(
                 "post_id": post_id_str,
                 "user_id": user_id,
                 "content": body.content,
+                "author_name": author_name,
             }
         )
         .execute()
     )
     comment_data = row.data[0]
 
-    # 작성자 이름/아바타 조회
-    profile = (
-        sb.table("profiles")
-        .select("name, avatar_url")
-        .eq("id", user_id)
-        .maybe_single()
-        .execute()
-    )
-    author_name = profile.data.get("name") if profile.data else None
-    author_avatar_url = profile.data.get("avatar_url") if profile.data else None
-
     # 알림 생성 (본인 글에 본인이 댓글 달면 제외)
-    post_author_id = post.data["user_id"]
+    # notifications 테이블이 없거나 실패해도 댓글 자체는 성공 처리
+    post_author_id = post_data["user_id"]
     if post_author_id != user_id:
-        sb.table("notifications").insert(
-            {
-                "user_id": post_author_id,
-                "type": "comment",
-                "actor_id": user_id,
-                "post_id": post_id_str,
-                "comment_id": comment_data["id"],
-                "message": "회원님의 글에 댓글을 남겼습니다",
-                "is_read": False,
-            }
-        ).execute()
+        try:
+            sb.table("notifications").insert(
+                {
+                    "user_id": post_author_id,
+                    "type": "comment",
+                    "actor_id": user_id,
+                    "post_id": post_id_str,
+                    "comment_id": comment_data["id"],
+                    "message": "회원님의 글에 댓글을 남겼습니다",
+                    "is_read": False,
+                }
+            ).execute()
+        except Exception:
+            pass
 
+    merged_comment = {**comment_data}
+    merged_comment.pop("author_name", None)
+    merged_comment.pop("author_avatar_url", None)
     return CommentResponse(
-        **comment_data,
+        **merged_comment,
         author_name=author_name,
         author_avatar_url=author_avatar_url,
     )
