@@ -25,6 +25,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -68,6 +70,7 @@ fun HomeScreen(
     var userName by remember { mutableStateOf("이름") }
     var sessions by remember { mutableStateOf<List<InterviewSession>>(emptyList()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(token) {
         if (token.isBlank()) {
@@ -83,8 +86,16 @@ fun HomeScreen(
         sessionsResult.onSuccess { sessions = it }
             .onFailure { e -> errorMessage = e.message ?: "문답 목록을 불러오지 못했습니다." }
     }
+    LaunchedEffect(errorMessage) {
+        val msg = errorMessage
+        if (!msg.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(msg)
+            errorMessage = null
+        }
+    }
     Scaffold(
         containerColor = StoryVenueColors.Background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             StoryBottomNavBar(
                 selectedIndex = 1,
@@ -123,15 +134,6 @@ fun HomeScreen(
                             modifier = Modifier.size(28.dp),
                         )
                     }
-                }
-                if (!errorMessage.isNullOrBlank()) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = errorMessage ?: "",
-                        fontSize = 13.sp,
-                        color = StoryVenueColors.Error,
-                        fontFamily = SBAggroFamily,
-                    )
                 }
                 Spacer(Modifier.height(20.dp))
             }
