@@ -60,6 +60,7 @@ data class NotificationItem(
     val timeAgo: String,
     val isRead: Boolean = false,
     val type: String = "comment",
+    val chatPartnerId: String? = null,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -79,7 +80,26 @@ fun NotificationScreen(
 
     suspend fun loadNotifications() {
         withContext(Dispatchers.IO) {
-            ApiService.getNotifications(token).onSuccess { notifications = it }
+            val normal = ApiService.getNotifications(token).getOrNull().orEmpty()
+            val partners = ApiService.getChatPartners(token).getOrNull().orEmpty()
+            val chatItems = partners
+                .filter { it.unreadCount > 0 }
+                .map { p ->
+                    NotificationItem(
+                        id = "chat:${p.userId}",
+                        actorName = p.userName,
+                        actorAvatarUrl = p.avatarUrl,
+                        message = if (p.unreadCount > 1)
+                            "새 메시지 ${p.unreadCount}개"
+                        else "새 메시지가 도착했어요",
+                        commentPreview = p.lastMessage.ifBlank { null },
+                        timeAgo = p.lastMessageTime,
+                        isRead = false,
+                        type = "chat",
+                        chatPartnerId = p.userId,
+                    )
+                }
+            notifications = chatItems + normal
         }
     }
 
@@ -158,8 +178,8 @@ fun NotificationScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                // 읽음 처리
-                                if (!notification.isRead) {
+                                // 채팅 타입은 서버 알림 테이블에 없으므로 읽음 처리 생략
+                                if (!notification.isRead && notification.type != "chat") {
                                     scope.launch(Dispatchers.IO) {
                                         ApiService.markNotificationRead(token, notification.id)
                                     }

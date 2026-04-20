@@ -109,6 +109,18 @@ fun ProfileScreen(
     var isSavingEdit by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var isDeleting by remember { mutableStateOf(false) }
+    var hasNotifBadge by remember { mutableStateOf(false) }
+    var hasChatBadge by remember { mutableStateOf(false) }
+
+    LaunchedEffect(token) {
+        if (token.isBlank()) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            ApiService.getUnreadCount(token).onSuccess { hasNotifBadge = it > 0 }
+            ApiService.getChatPartners(token).onSuccess { partners ->
+                hasChatBadge = partners.any { it.unreadCount > 0 }
+            }
+        }
+    }
 
     fun loadAvatar(url: String) {
         scope.launch {
@@ -378,13 +390,11 @@ fun ProfileScreen(
                     )
                 },
                 actions = {
-                    IconButton(onClick = onNotificationClick) {
-                        Icon(
-                            imageVector = Icons.Filled.Notifications,
-                            contentDescription = "알림",
-                            tint = StoryVenueColors.OnSurface,
-                        )
-                    }
+                    BellIconButton(
+                        hasBadge = hasNotifBadge,
+                        onClick = onNotificationClick,
+                        iconSize = 24.dp,
+                    )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = StoryVenueColors.Background,
@@ -394,6 +404,7 @@ fun ProfileScreen(
         bottomBar = {
             StoryBottomNavBar(
                 selectedIndex = 3,
+                hasChatBadge = hasChatBadge,
                 onHomeClick = onHomeClick,
                 onFeedClick = onFeedClick,
                 onChatClick = onChatClick,

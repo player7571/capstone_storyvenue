@@ -88,6 +88,8 @@ fun HomeScreen(
     var isRefreshing by remember { mutableStateOf(false) }
     var sessionPendingDelete by remember { mutableStateOf<InterviewSession?>(null) }
     var deletingSessionId by remember { mutableStateOf<String?>(null) }
+    var hasNotifBadge by remember { mutableStateOf(false) }
+    var hasChatBadge by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -131,7 +133,20 @@ fun HomeScreen(
         }
     }
 
-    LaunchedEffect(token) { loadHome() }
+    suspend fun loadBadges() {
+        if (token.isBlank()) return
+        withContext(Dispatchers.IO) {
+            ApiService.getUnreadCount(token).onSuccess { hasNotifBadge = it > 0 }
+            ApiService.getChatPartners(token).onSuccess { partners ->
+                hasChatBadge = partners.any { it.unreadCount > 0 }
+            }
+        }
+    }
+
+    LaunchedEffect(token) {
+        loadHome()
+        loadBadges()
+    }
 
     LaunchedEffect(errorMessage) {
         val msg = errorMessage
@@ -198,6 +213,7 @@ fun HomeScreen(
         bottomBar = {
             StoryBottomNavBar(
                 selectedIndex = 1,
+                hasChatBadge = hasChatBadge,
                 onHomeClick = {},
                 onFeedClick = onFeedClick,
                 onChatClick = onChatClick,
@@ -235,14 +251,10 @@ fun HomeScreen(
                         color = StoryVenueColors.OnSurface,
                         fontFamily = SBAggroFamily,
                     )
-                    IconButton(onClick = onNotificationClick) {
-                        Icon(
-                            imageVector = Icons.Filled.Notifications,
-                            contentDescription = "알림",
-                            tint = StoryVenueColors.OnSurface,
-                            modifier = Modifier.size(28.dp),
-                        )
-                    }
+                    BellIconButton(
+                        hasBadge = hasNotifBadge,
+                        onClick = onNotificationClick,
+                    )
                 }
                 Spacer(Modifier.height(20.dp))
             }
@@ -437,6 +449,7 @@ private fun SessionChip(text: String, color: Color) {
 @Composable
 fun StoryBottomNavBar(
     selectedIndex: Int = 0,
+    hasChatBadge: Boolean = false,
     onHomeClick: () -> Unit = {},
     onFeedClick: () -> Unit = {},
     onChatClick: () -> Unit = {},
@@ -472,12 +485,23 @@ fun StoryBottomNavBar(
                         }
                     },
             ) {
-                Icon(
-                    imageVector = icons[index],
-                    contentDescription = label,
-                    tint = tint,
-                    modifier = Modifier.size(24.dp),
-                )
+                Box {
+                    Icon(
+                        imageVector = icons[index],
+                        contentDescription = label,
+                        tint = tint,
+                        modifier = Modifier.size(24.dp),
+                    )
+                    if (index == 2 && hasChatBadge) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(StoryVenueColors.Error),
+                        )
+                    }
+                }
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = label,
@@ -485,6 +509,34 @@ fun StoryBottomNavBar(
                     color = tint,
                     fontFamily = SBAggroFamily,
                     fontWeight = if (index == selectedIndex) FontWeight.Bold else FontWeight.Normal,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun BellIconButton(
+    hasBadge: Boolean,
+    onClick: () -> Unit,
+    tint: Color = StoryVenueColors.OnSurface,
+    iconSize: androidx.compose.ui.unit.Dp = 28.dp,
+) {
+    IconButton(onClick = onClick) {
+        Box {
+            Icon(
+                imageVector = Icons.Filled.Notifications,
+                contentDescription = "알림",
+                tint = tint,
+                modifier = Modifier.size(iconSize),
+            )
+            if (hasBadge) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(StoryVenueColors.Error),
                 )
             }
         }

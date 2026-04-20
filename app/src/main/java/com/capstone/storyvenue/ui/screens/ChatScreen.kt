@@ -94,11 +94,14 @@ fun ChatListScreen(
     var partners by remember { mutableStateOf<List<ChatPartner>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var isRefreshing by remember { mutableStateOf(false) }
+    var hasNotifBadge by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val hasChatBadge = partners.any { it.unreadCount > 0 }
 
     suspend fun loadPartners() {
         withContext(Dispatchers.IO) {
             ApiService.getChatPartners(token).onSuccess { partners = it }
+            ApiService.getUnreadCount(token).onSuccess { hasNotifBadge = it > 0 }
         }
     }
 
@@ -121,13 +124,11 @@ fun ChatListScreen(
                     )
                 },
                 actions = {
-                    IconButton(onClick = onNotificationClick) {
-                        Icon(
-                            imageVector = Icons.Filled.Notifications,
-                            contentDescription = "알림",
-                            tint = StoryVenueColors.OnSurface,
-                        )
-                    }
+                    BellIconButton(
+                        hasBadge = hasNotifBadge,
+                        onClick = onNotificationClick,
+                        iconSize = 24.dp,
+                    )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = StoryVenueColors.Background,
@@ -137,6 +138,7 @@ fun ChatListScreen(
         bottomBar = {
             StoryBottomNavBar(
                 selectedIndex = 2,
+                hasChatBadge = hasChatBadge,
                 onHomeClick = onHomeClick,
                 onFeedClick = onFeedClick,
                 onProfileClick = onProfileClick,
