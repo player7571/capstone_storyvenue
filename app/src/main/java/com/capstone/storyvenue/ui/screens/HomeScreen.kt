@@ -50,6 +50,8 @@ data class InterviewSession(
     val number: Int,
     val date: String,
     val title: String,
+    val sessionType: String? = null,
+    val status: String? = null,
 )
 
 @Composable
@@ -243,6 +245,30 @@ fun HomeScreen(
                             color = StoryVenueColors.SubText,
                             fontFamily = SBAggroFamily,
                         )
+                        val typeLabel = when (session.sessionType) {
+                            "photo" -> "사진 문답"
+                            "voice" -> "음성 문답"
+                            else -> null
+                        }
+                        val statusLabel = when (session.status) {
+                            "completed" -> "완료"
+                            "in_progress", "ongoing" -> "진행 중"
+                            else -> null
+                        }
+                        if (typeLabel != null || statusLabel != null) {
+                            Spacer(Modifier.height(10.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (typeLabel != null) {
+                                    SessionChip(text = typeLabel, color = StoryVenueColors.Primary)
+                                }
+                                if (statusLabel != null) {
+                                    if (typeLabel != null) Spacer(Modifier.width(6.dp))
+                                    val statusColor = if (session.status == "completed")
+                                        StoryVenueColors.SubText else StoryVenueColors.Accent
+                                    SessionChip(text = statusLabel, color = statusColor)
+                                }
+                            }
+                        }
                     }
                 }
                 Spacer(Modifier.height(12.dp))
@@ -251,6 +277,20 @@ fun HomeScreen(
             item { Spacer(Modifier.height(16.dp)) }
         }
     }
+}
+
+@Composable
+private fun SessionChip(text: String, color: Color) {
+    Text(
+        text = text,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        color = color,
+        fontFamily = SBAggroFamily,
+        modifier = Modifier
+            .background(color.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    )
 }
 
 @Composable
