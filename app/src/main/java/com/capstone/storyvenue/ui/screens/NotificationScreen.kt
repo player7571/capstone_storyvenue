@@ -60,6 +60,7 @@ data class NotificationItem(
     val timeAgo: String,
     val isRead: Boolean = false,
     val type: String = "comment",
+    val postId: String? = null,
     val chatPartnerId: String? = null,
 )
 
