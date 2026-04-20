@@ -21,9 +21,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -33,6 +35,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -83,8 +86,15 @@ fun HomeScreen(
     var sessions by remember { mutableStateOf<List<InterviewSession>>(emptyList()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isRefreshing by remember { mutableStateOf(false) }
+    var sessionPendingDelete by remember { mutableStateOf<InterviewSession?>(null) }
+    var deletingSessionId by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    fun reindexSessions(items: List<InterviewSession>): List<InterviewSession> =
+        items.mapIndexed { index, session ->
+            session.copy(number = items.size - index)
+        }
 
     suspend fun loadHome() {
         if (token.isBlank()) {
@@ -102,6 +112,26 @@ fun HomeScreen(
         }.onFailure { e -> errorMessage = e.message ?: "문답 목록을 불러오지 못했습니다." }
     }
 
+    suspend fun deleteSession(session: InterviewSession) {
+        if (token.isBlank()) {
+            errorMessage = "로그인이 필요합니다."
+            return
+        }
+
+        deletingSessionId = session.id
+        val result = withContext(Dispatchers.IO) { ApiService.deleteSession(token, session.id) }
+        deletingSessionId = null
+
+        if (result.isSuccess) {
+            sessionPendingDelete = null
+            sessions = reindexSessions(sessions.filterNot { it.id == session.id })
+            snackbarHostState.showSnackbar("문답이 삭제되었습니다.")
+        } else {
+            val e = result.exceptionOrNull()
+            errorMessage = e.message ?: "문답 삭제에 실패했습니다."
+        }
+    }
+
     LaunchedEffect(token) { loadHome() }
 
     LaunchedEffect(errorMessage) {
@@ -111,6 +141,58 @@ fun HomeScreen(
             errorMessage = null
         }
     }
+
+    sessionPendingDelete?.let { session ->
+        val isDeleting = deletingSessionId == session.id
+        AlertDialog(
+            onDismissRequest = {
+                if (!isDeleting) {
+                    sessionPendingDelete = null
+                }
+            },
+            title = {
+                Text(
+                    text = "문답 삭제",
+                    fontFamily = SBAggroFamily,
+                    fontWeight = FontWeight.Bold,
+                )
+            },
+            text = {
+                Text(
+                    text = "이 문답과 대화 기록을 삭제할까요?\n이미 만든 챕터와 책은 유지됩니다.",
+                    fontFamily = SBAggroFamily,
+                    lineHeight = 22.sp,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        scope.launch { deleteSession(session) }
+                    },
+                    enabled = !isDeleting,
+                ) {
+                    Text(
+                        text = if (isDeleting) "삭제 중..." else "삭제",
+                        color = StoryVenueColors.Error,
+                        fontFamily = SBAggroFamily,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { sessionPendingDelete = null },
+                    enabled = !isDeleting,
+                ) {
+                    Text(
+                        text = "취소",
+                        color = StoryVenueColors.SubText,
+                        fontFamily = SBAggroFamily,
+                    )
+                }
+            },
+        )
+    }
+
     Scaffold(
         containerColor = StoryVenueColors.Background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -251,50 +333,76 @@ fun HomeScreen(
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp, vertical = 18.dp),
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "문답 #${session.number}",
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = StoryVenueColors.OnSurface,
-                                fontFamily = SBAggroFamily,
-                            )
-                            Text(
-                                text = "  |  ${session.date}",
-                                fontSize = 16.sp,
-                                color = StoryVenueColors.SubText,
-                                fontFamily = SBAggroFamily,
-                            )
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = session.title,
-                            fontSize = 16.sp,
-                            color = StoryVenueColors.SubText,
-                            fontFamily = SBAggroFamily,
-                        )
-                        val typeLabel = when (session.sessionType) {
-                            "photo" -> "사진 문답"
-                            "voice" -> "음성 문답"
-                            else -> null
-                        }
-                        val statusLabel = when (session.status) {
-                            "completed" -> "완료"
-                            "in_progress", "ongoing" -> "진행 중"
-                            else -> null
-                        }
-                        if (typeLabel != null || statusLabel != null) {
-                            Spacer(Modifier.height(10.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (typeLabel != null) {
-                                    SessionChip(text = typeLabel, color = StoryVenueColors.Primary)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "문답 #${session.number}",
+                                        fontSize = 17.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = StoryVenueColors.OnSurface,
+                                        fontFamily = SBAggroFamily,
+                                    )
+                                    Text(
+                                        text = "  |  ${session.date}",
+                                        fontSize = 16.sp,
+                                        color = StoryVenueColors.SubText,
+                                        fontFamily = SBAggroFamily,
+                                    )
                                 }
-                                if (statusLabel != null) {
-                                    if (typeLabel != null) Spacer(Modifier.width(6.dp))
-                                    val statusColor = if (session.status == "completed")
-                                        StoryVenueColors.SubText else StoryVenueColors.Accent
-                                    SessionChip(text = statusLabel, color = statusColor)
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    text = session.title,
+                                    fontSize = 16.sp,
+                                    color = StoryVenueColors.SubText,
+                                    fontFamily = SBAggroFamily,
+                                )
+                                val typeLabel = when (session.sessionType) {
+                                    "photo" -> "사진 문답"
+                                    "voice" -> "음성 문답"
+                                    else -> null
                                 }
+                                val statusLabel = when (session.status) {
+                                    "completed" -> "완료"
+                                    "in_progress", "ongoing" -> "진행 중"
+                                    else -> null
+                                }
+                                if (typeLabel != null || statusLabel != null) {
+                                    Spacer(Modifier.height(10.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (typeLabel != null) {
+                                            SessionChip(text = typeLabel, color = StoryVenueColors.Primary)
+                                        }
+                                        if (statusLabel != null) {
+                                            if (typeLabel != null) Spacer(Modifier.width(6.dp))
+                                            val statusColor = if (session.status == "completed")
+                                                StoryVenueColors.SubText else StoryVenueColors.Accent
+                                            SessionChip(text = statusLabel, color = statusColor)
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(Modifier.width(12.dp))
+
+                            IconButton(
+                                onClick = { sessionPendingDelete = session },
+                                enabled = deletingSessionId == null,
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(StoryVenueColors.Background),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Close,
+                                    contentDescription = "문답 삭제",
+                                    tint = StoryVenueColors.SubText,
+                                    modifier = Modifier.size(16.dp),
+                                )
                             }
                         }
                     }
