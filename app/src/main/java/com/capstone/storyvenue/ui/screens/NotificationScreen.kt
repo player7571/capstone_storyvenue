@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -28,6 +29,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -73,11 +75,16 @@ fun NotificationScreen(
 
     var notifications by remember { mutableStateOf<List<NotificationItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    var isRefreshing by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
+    suspend fun loadNotifications() {
         withContext(Dispatchers.IO) {
             ApiService.getNotifications(token).onSuccess { notifications = it }
         }
+    }
+
+    LaunchedEffect(Unit) {
+        loadNotifications()
         isLoading = false
     }
 
@@ -113,30 +120,40 @@ fun NotificationScreen(
             Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = StoryVenueColors.Primary)
             }
-        } else if (notifications.isEmpty()) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-            ) {
-                Text(
-                    text = "아직 알림이 없습니다",
-                    fontSize = 18.sp,
-                    color = StoryVenueColors.SubText,
-                    fontFamily = SBAggroFamily,
-                )
-            }
         } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(horizontal = 16.dp),
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = {
+                    scope.launch {
+                        isRefreshing = true
+                        loadNotifications()
+                        isRefreshing = false
+                    }
+                },
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
             ) {
-                item { Spacer(Modifier.height(8.dp)) }
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                ) {
+                    if (notifications.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier.fillParentMaxSize(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                EmptyState(
+                                    icon = Icons.Filled.NotificationsNone,
+                                    title = "아직 새 소식이 없어요",
+                                    subtitle = "누군가 당신의 이야기에 반응하면 여기에 표시돼요.",
+                                )
+                            }
+                        }
+                    } else {
+                        item { Spacer(Modifier.height(8.dp)) }
 
-                items(notifications) { notification ->
+                        items(notifications) { notification ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -218,6 +235,8 @@ fun NotificationScreen(
                 }
 
                 item { Spacer(Modifier.height(16.dp)) }
+                    }
+                }
             }
         }
     }

@@ -1,5 +1,6 @@
 package com.capstone.storyvenue.ui.screens
 
+import android.content.Context
 import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -15,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -25,9 +27,6 @@ import com.capstone.storyvenue.ui.theme.StoryVenueColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import org.json.JSONObject
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Data model
@@ -39,11 +38,11 @@ data class ChapterDraft(
     val content: String
 )
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Network helper (OkHttp)
-// ──────────────────────────────────────────────────────────────────────────────
-
-private val okHttpClient = OkHttpClient()
+private fun chapterTypeFromNumber(chapterNumber: Int): String {
+    val types = listOf("childhood", "youth", "career", "love", "reflection")
+    val index = (chapterNumber - 1).coerceAtLeast(0) % types.size
+    return types[index]
+}
 
 /**
  * 서버에서 챕터 초안을 가져옵니다.
@@ -54,30 +53,32 @@ private val okHttpClient = OkHttpClient()
  */
 suspend fun fetchChapterDraft(
     sessionId: String,
-    chapterNumber: Int
+    chapterNumber: Int,
+    token: String,
 ): Result<ChapterDraft> = withContext(Dispatchers.IO) {
-    return@withContext try {
-        val url = "http://10.0.2.2:8000/chapter/$sessionId/$chapterNumber"
-        val request = Request.Builder().url(url).build()
-        val response = okHttpClient.newCall(request).execute()
+    if (sessionId.isBlank()) {
+        return@withContext Result.failure(Exception("세션 정보가 없습니다. 인터뷰를 다시 시작해주세요."))
+    }
+    if (token.isBlank()) {
+        return@withContext Result.failure(Exception("로그인이 필요합니다."))
+    }
 
-        if (response.isSuccessful) {
-            val body = response.body?.string() ?: "{}"
-            val json = JSONObject(body)
-            Result.success(
-                ChapterDraft(
-                    chapterNumber = json.optInt("chapter_number", chapterNumber),
-                    title         = json.optString("title", "챕터 $chapterNumber"),
-                    content       = json.optString("content", "")
-                )
+    return@withContext try {
+        val result = ApiService.generateChapter(
+            token = token,
+            sessionId = sessionId,
+            chapterType = chapterTypeFromNumber(chapterNumber),
+        )
+        result.map { chapter ->
+            ChapterDraft(
+                chapterNumber = chapterNumber,
+                title = chapter.title.ifBlank { "챕터 $chapterNumber" },
+                content = chapter.content,
             )
-        } else {
-            Result.failure(Exception("서버 오류 ${response.code}"))
         }
     } catch (e: Exception) {
-        Log.w("ChapterDraft", "네트워크 실패, 더미 데이터 사용: ${e.message}")
-        // 백엔드 미연결 시 더미 데이터
-        Result.success(dummyChapter(chapterNumber))
+        Log.w("ChapterDraft", "챕터 생성 실패: ${e.message}")
+        Result.failure(e)
     }
 }
 
@@ -108,11 +109,14 @@ private fun dummyChapter(number: Int) = ChapterDraft(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChapterDraftScreen(
-    sessionId: String     = "demo-session",
+    sessionId: String     = "",
     chapterNumber: Int    = 3,
     onBack: () -> Unit    = {},
     onAddToBook: (ChapterDraft) -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val prefs = context.getSharedPreferences("storyvenue", Context.MODE_PRIVATE)
+    val token = prefs.getString("access_token", "") ?: ""
     val scope = rememberCoroutineScope()
 
     // ── 상태 ────────────────────────────────────────────────────────────────
@@ -122,7 +126,7 @@ fun ChapterDraftScreen(
 
     // 최초 로드
     LaunchedEffect(sessionId, chapterNumber) {
-        loadDraft(sessionId, chapterNumber) { result, err ->
+        loadDraft(sessionId, chapterNumber, token) { result, err ->
             draft     = result
             errorMsg  = err
             isLoading = false
@@ -134,7 +138,7 @@ fun ChapterDraftScreen(
         isLoading = true
         errorMsg  = null
         scope.launch {
-            loadDraft(sessionId, chapterNumber) { result, err ->
+            loadDraft(sessionId, chapterNumber, token) { result, err ->
                 draft     = result
                 errorMsg  = err
                 isLoading = false
@@ -353,9 +357,10 @@ private fun BottomButtons(
 private suspend fun loadDraft(
     sessionId: String,
     chapterNumber: Int,
+    token: String,
     onResult: (ChapterDraft?, String?) -> Unit
 ) {
-    val result = fetchChapterDraft(sessionId, chapterNumber)
+    val result = fetchChapterDraft(sessionId, chapterNumber, token)
     withContext(Dispatchers.Main) {
         if (result.isSuccess) {
             onResult(result.getOrNull(), null)
