@@ -29,7 +29,7 @@ object Routes {
     const val SIGNUP          = "signup"
     const val HOME            = "home"
     const val VOICE_INTERVIEW = "voice_interview?sessionId={sessionId}"
-    const val CHAPTER_DRAFT   = "chapter_draft"
+    const val CHAPTER_DRAFT   = "chapter_draft/{sessionId}"
     const val BOOK_PREVIEW    = "book_preview"
     const val FEED            = "feed"
     const val FEED_DETAIL     = "feed_detail/{postId}"
@@ -43,6 +43,7 @@ object Routes {
     fun chatRoom(userId: String) = "chat_room/$userId"
     fun voiceInterview(sessionId: String? = null) =
         if (sessionId.isNullOrBlank()) "voice_interview" else "voice_interview?sessionId=$sessionId"
+    fun chapterDraft(sessionId: String) = "chapter_draft/$sessionId"
 }
 
 @Composable
@@ -94,11 +95,18 @@ fun StoryVenueNavGraph(
             VoiceInterviewScreen(
                 initialSessionId = sessionId,
                 onBack = { navController.popBackStack() },
-                onGenerateChapter = { navController.navigate(Routes.CHAPTER_DRAFT) },
+                onGenerateChapter = { sid -> navController.navigate(Routes.chapterDraft(sid)) },
             )
         }
-        composable(Routes.CHAPTER_DRAFT) {
+        composable(
+            route = Routes.CHAPTER_DRAFT,
+            arguments = listOf(
+                navArgument("sessionId") { type = NavType.StringType },
+            ),
+        ) { back ->
+            val sessionId = back.arguments?.getString("sessionId") ?: ""
             ChapterDraftScreen(
+                sessionId = sessionId,
                 onBack = { navController.popBackStack() },
                 onAddToBook = { navController.navigate(Routes.BOOK_PREVIEW) },
             )
