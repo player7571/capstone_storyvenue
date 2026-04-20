@@ -35,6 +35,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -115,6 +117,7 @@ fun VoiceInterviewScreen(
     var lastRecordedFileName by remember { mutableStateOf("") }
     var recordingSeconds by remember { mutableStateOf(0) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
     var isPreparingSession by remember { mutableStateOf(!initialSessionId.isNullOrBlank()) }
     var isUploadingPhoto by remember { mutableStateOf(false) }
     var isRecording by remember { mutableStateOf(false) }
@@ -449,8 +452,17 @@ fun VoiceInterviewScreen(
     val sessionStarted = !sessionId.isNullOrBlank()
     val canAttachPhoto = !sessionStarted && !isPreparingSession && !isUploadingPhoto && !isRecording && !isUploadingAudio
 
+    LaunchedEffect(errorMessage) {
+        val msg = errorMessage
+        if (!msg.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(msg)
+            errorMessage = null
+        }
+    }
+
     Scaffold(
         containerColor = StoryVenueColors.Background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -679,18 +691,6 @@ fun VoiceInterviewScreen(
                     text = "AI 인터뷰어: $assistantText",
                     fontSize = 14.sp,
                     color = StoryVenueColors.Primary,
-                    fontFamily = SBAggroFamily,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-
-            if (!errorMessage.isNullOrBlank()) {
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    text = errorMessage ?: "",
-                    fontSize = 14.sp,
-                    color = StoryVenueColors.Error,
                     fontFamily = SBAggroFamily,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth(),
