@@ -70,7 +70,7 @@ private val dummyChapters = listOf(
  * @param chapters        챕터 목록 (기본: 더미 데이터)
  * @param onBack          뒤로가기 콜백
  * @param onAddChapter    "이야기 더 만들기" 콜백
- * @param onPostToFeed    "피드에 올리기" 콜백
+ * @param onPostToFeed    "이야기에 올리기" 콜백
  * @param onChapterClick  챕터 카드 클릭 콜백 (→ 챕터 초안 화면 이동용)
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -169,10 +169,10 @@ fun BookPreviewScreen(
                     )
                 }
 
-                // 피드에 올리기
+                // 이야기에 올리기
                 Button(
                     onClick  = {
-                        Log.d("BookPreview", "피드에 올리기 클릭")
+                        Log.d("BookPreview", "이야기에 올리기 클릭")
                         onPostToFeed()
                     },
                     shape  = RoundedCornerShape(50.dp),
@@ -185,7 +185,7 @@ fun BookPreviewScreen(
                         .height(52.dp)
                 ) {
                     Text(
-                        text       = "피드에 올리기",
+                        text       = "이야기에 올리기",
                         fontSize   = 16.sp,
                         fontWeight = FontWeight.SemiBold
                     )
