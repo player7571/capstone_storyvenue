@@ -16,6 +16,8 @@ import com.capstone.storyvenue.ui.screens.FeedScreen
 import com.capstone.storyvenue.ui.screens.HomeScreen
 import com.capstone.storyvenue.ui.screens.LoginScreen
 import com.capstone.storyvenue.ui.screens.NotificationScreen
+import com.capstone.storyvenue.ui.screens.PostListMode
+import com.capstone.storyvenue.ui.screens.PostListScreen
 import com.capstone.storyvenue.ui.screens.ProfileScreen
 import com.capstone.storyvenue.ui.screens.SignUpScreen
 import com.capstone.storyvenue.ui.screens.SplashScreen
@@ -34,6 +36,8 @@ object Routes {
     const val CHAT_LIST       = "chat_list"
     const val CHAT_ROOM       = "chat_room/{userId}"
     const val PROFILE         = "profile"
+    const val MY_POSTS        = "profile/my_posts"
+    const val LIKED_POSTS     = "profile/liked_posts"
     const val NOTIFICATIONS   = "notifications"
     fun feedDetail(postId: String) = "feed_detail/$postId"
     fun chatRoom(userId: String) = "chat_room/$userId"
@@ -150,6 +154,22 @@ fun StoryVenueNavGraph(
                 onHomeClick = { navController.navigate(Routes.HOME) { popUpTo(Routes.HOME) { inclusive = true } } },
                 onFeedClick = { navController.navigate(Routes.FEED) },
                 onChatClick = { navController.navigate(Routes.CHAT_LIST) },
+                onMyPosts = { navController.navigate(Routes.MY_POSTS) },
+                onLikedPosts = { navController.navigate(Routes.LIKED_POSTS) },
+            )
+        }
+        composable(Routes.MY_POSTS) {
+            PostListScreen(
+                mode = PostListMode.MY,
+                onBack = { navController.popBackStack() },
+                onPostClick = { post -> navController.navigate(Routes.feedDetail(post.id)) },
+            )
+        }
+        composable(Routes.LIKED_POSTS) {
+            PostListScreen(
+                mode = PostListMode.LIKED,
+                onBack = { navController.popBackStack() },
+                onPostClick = { post -> navController.navigate(Routes.feedDetail(post.id)) },
             )
         }
         composable(Routes.NOTIFICATIONS) {

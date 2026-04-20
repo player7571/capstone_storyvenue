@@ -431,6 +431,45 @@ object ApiService {
         }
     }
 
+    fun getMyFeed(token: String, limit: Int = 20, offset: Int = 0): Result<List<FeedPost>> {
+        return fetchFeedList("$BASE_URL/feed/me?limit=$limit&offset=$offset", token)
+    }
+
+    fun getLikedFeed(token: String, limit: Int = 20, offset: Int = 0): Result<List<FeedPost>> {
+        return fetchFeedList("$BASE_URL/feed/liked?limit=$limit&offset=$offset", token)
+    }
+
+    private fun fetchFeedList(url: String, token: String): Result<List<FeedPost>> {
+        return try {
+            val response = client.newCall(authGet(url, token)).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                val arr = JSONArray(body)
+                val list = mutableListOf<FeedPost>()
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    list.add(
+                        FeedPost(
+                            id = obj.getString("id"),
+                            authorName = obj.optString("author_name", "익명"),
+                            title = obj.optString("title", ""),
+                            preview = obj.optString("preview", ""),
+                            likeCount = obj.optInt("like_count", 0),
+                            commentCount = obj.optInt("comment_count", 0),
+                            timeAgo = timeAgo(obj.optString("created_at", null)),
+                            likedByMe = obj.optBoolean("liked_by_me", false),
+                        )
+                    )
+                }
+                Result.success(list)
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "게시물 조회 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     fun getFeedDetail(token: String, postId: String): Result<FeedPost> {
         return try {
             val response = client.newCall(
