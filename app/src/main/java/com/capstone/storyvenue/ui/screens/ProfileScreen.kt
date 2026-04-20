@@ -34,6 +34,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -85,6 +87,22 @@ fun ProfileScreen(
     var isUploadingAvatar by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var infoMessage by remember { mutableStateOf<String?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    androidx.compose.runtime.LaunchedEffect(errorMessage) {
+        val msg = errorMessage
+        if (!msg.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(msg)
+            errorMessage = null
+        }
+    }
+    androidx.compose.runtime.LaunchedEffect(infoMessage) {
+        val msg = infoMessage
+        if (!msg.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(msg)
+            infoMessage = null
+        }
+    }
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
     var editName by remember { mutableStateOf("") }
@@ -347,6 +365,7 @@ fun ProfileScreen(
 
     Scaffold(
         containerColor = StoryVenueColors.Background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -451,26 +470,6 @@ fun ProfileScreen(
                 fontFamily = SBAggroFamily,
                 fontWeight = FontWeight.Bold,
             )
-
-            if (!errorMessage.isNullOrBlank()) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = errorMessage ?: "",
-                    fontSize = 13.sp,
-                    color = StoryVenueColors.Error,
-                    fontFamily = SBAggroFamily,
-                )
-            }
-
-            if (!infoMessage.isNullOrBlank()) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = infoMessage ?: "",
-                    fontSize = 13.sp,
-                    color = StoryVenueColors.Primary,
-                    fontFamily = SBAggroFamily,
-                )
-            }
 
             Spacer(Modifier.height(32.dp))
 

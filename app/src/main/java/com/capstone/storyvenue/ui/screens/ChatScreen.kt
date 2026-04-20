@@ -36,6 +36,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -92,11 +93,17 @@ fun ChatListScreen(
 
     var partners by remember { mutableStateOf<List<ChatPartner>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    var isRefreshing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
+    suspend fun loadPartners() {
         withContext(Dispatchers.IO) {
             ApiService.getChatPartners(token).onSuccess { partners = it }
         }
+    }
+
+    LaunchedEffect(Unit) {
+        loadPartners()
         isLoading = false
     }
 
@@ -140,22 +147,39 @@ fun ChatListScreen(
             Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = StoryVenueColors.Primary)
             }
-        } else if (partners.isEmpty()) {
-            EmptyState(
-                icon = Icons.AutoMirrored.Filled.Chat,
-                title = "아직 대화 상대가 없어요",
-                subtitle = "이야기에서 마음에 드는 사람에게 말을 걸어보세요.",
-                modifier = Modifier.padding(innerPadding),
-            )
         } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(horizontal = 16.dp),
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = {
+                    scope.launch {
+                        isRefreshing = true
+                        loadPartners()
+                        isRefreshing = false
+                    }
+                },
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
             ) {
-                item { Spacer(Modifier.height(8.dp)) }
-                items(partners) { partner ->
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                ) {
+                    if (partners.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier.fillParentMaxSize(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                EmptyState(
+                                    icon = Icons.AutoMirrored.Filled.Chat,
+                                    title = "아직 대화 상대가 없어요",
+                                    subtitle = "이야기에서 마음에 드는 사람에게 말을 걸어보세요.",
+                                )
+                            }
+                        }
+                    } else {
+                        item { Spacer(Modifier.height(8.dp)) }
+                        items(partners) { partner ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -204,6 +228,8 @@ fun ChatListScreen(
                         }
                     }
                     Spacer(Modifier.height(8.dp))
+                }
+                    }
                 }
             }
         }

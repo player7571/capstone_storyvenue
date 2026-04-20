@@ -38,6 +38,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -88,13 +89,17 @@ fun FeedScreen(
 
     var posts by remember { mutableStateOf<List<FeedPost>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    var isRefreshing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    suspend fun loadFeed() {
+        withContext(Dispatchers.IO) {
+            ApiService.getFeed(token).onSuccess { posts = it }
+        }
+    }
 
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            ApiService.getFeed(token).onSuccess {
-                posts = it
-            }
-        }
+        loadFeed()
         isLoading = false
     }
 
@@ -140,26 +145,45 @@ fun FeedScreen(
             Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = StoryVenueColors.Primary)
             }
-        } else if (posts.isEmpty()) {
-            EmptyState(
-                icon = Icons.AutoMirrored.Filled.MenuBook,
-                title = "아직 올라온 이야기가 없어요",
-                subtitle = "첫 이야기를 올려 사람들과 나눠보세요.",
-                modifier = Modifier.padding(innerPadding),
-            )
         } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(horizontal = 16.dp),
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = {
+                    scope.launch {
+                        isRefreshing = true
+                        loadFeed()
+                        isRefreshing = false
+                    }
+                },
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
             ) {
-                item { Spacer(Modifier.height(8.dp)) }
-                items(posts) { post ->
-                    FeedPostCard(post = post, token = token, onClick = { onPostClick(post) })
-                    Spacer(Modifier.height(12.dp))
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                ) {
+                    if (posts.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier.fillParentMaxSize(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                EmptyState(
+                                    icon = Icons.AutoMirrored.Filled.MenuBook,
+                                    title = "아직 올라온 이야기가 없어요",
+                                    subtitle = "첫 이야기를 올려 사람들과 나눠보세요.",
+                                )
+                            }
+                        }
+                    } else {
+                        item { Spacer(Modifier.height(8.dp)) }
+                        items(posts) { post ->
+                            FeedPostCard(post = post, token = token, onClick = { onPostClick(post) })
+                            Spacer(Modifier.height(12.dp))
+                        }
+                        item { Spacer(Modifier.height(16.dp)) }
+                    }
                 }
-                item { Spacer(Modifier.height(16.dp)) }
             }
         }
     }

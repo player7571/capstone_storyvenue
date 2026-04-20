@@ -19,23 +19,33 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -43,6 +53,7 @@ import androidx.compose.ui.unit.sp
 import com.capstone.storyvenue.ui.theme.SBAggroFamily
 import com.capstone.storyvenue.ui.theme.StoryVenueColors
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 data class InterviewSession(
@@ -50,8 +61,11 @@ data class InterviewSession(
     val number: Int,
     val date: String,
     val title: String,
+    val sessionType: String? = null,
+    val status: String? = null,
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onNewInterview: () -> Unit = {},
@@ -68,23 +82,38 @@ fun HomeScreen(
     var userName by remember { mutableStateOf("이름") }
     var sessions by remember { mutableStateOf<List<InterviewSession>>(emptyList()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isRefreshing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(token) {
+    suspend fun loadHome() {
         if (token.isBlank()) {
             errorMessage = "로그인이 필요합니다."
-            return@LaunchedEffect
+            return
         }
-
         val profileResult = withContext(Dispatchers.IO) { ApiService.getProfile(token) }
         profileResult.onSuccess { userName = it.name.ifBlank { "이름" } }
             .onFailure { e -> errorMessage = e.message ?: "내정보를 불러오지 못했습니다." }
 
         val sessionsResult = withContext(Dispatchers.IO) { ApiService.getSessions(token) }
-        sessionsResult.onSuccess { sessions = it }
-            .onFailure { e -> errorMessage = e.message ?: "문답 목록을 불러오지 못했습니다." }
+        sessionsResult.onSuccess {
+            sessions = it
+            errorMessage = null
+        }.onFailure { e -> errorMessage = e.message ?: "문답 목록을 불러오지 못했습니다." }
+    }
+
+    LaunchedEffect(token) { loadHome() }
+
+    LaunchedEffect(errorMessage) {
+        val msg = errorMessage
+        if (!msg.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(msg)
+            errorMessage = null
+        }
     }
     Scaffold(
         containerColor = StoryVenueColors.Background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             StoryBottomNavBar(
                 selectedIndex = 1,
@@ -95,10 +124,20 @@ fun HomeScreen(
             )
         }
     ) { innerPadding ->
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+                scope.launch {
+                    isRefreshing = true
+                    loadHome()
+                    isRefreshing = false
+                }
+            },
+            modifier = Modifier.fillMaxSize().padding(innerPadding),
+        ) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
                 .padding(horizontal = 20.dp),
         ) {
             item {
@@ -123,15 +162,6 @@ fun HomeScreen(
                             modifier = Modifier.size(28.dp),
                         )
                     }
-                }
-                if (!errorMessage.isNullOrBlank()) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = errorMessage ?: "",
-                        fontSize = 13.sp,
-                        color = StoryVenueColors.Error,
-                        fontFamily = SBAggroFamily,
-                    )
                 }
                 Spacer(Modifier.height(20.dp))
             }
@@ -243,6 +273,30 @@ fun HomeScreen(
                             color = StoryVenueColors.SubText,
                             fontFamily = SBAggroFamily,
                         )
+                        val typeLabel = when (session.sessionType) {
+                            "photo" -> "사진 문답"
+                            "voice" -> "음성 문답"
+                            else -> null
+                        }
+                        val statusLabel = when (session.status) {
+                            "completed" -> "완료"
+                            "in_progress", "ongoing" -> "진행 중"
+                            else -> null
+                        }
+                        if (typeLabel != null || statusLabel != null) {
+                            Spacer(Modifier.height(10.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (typeLabel != null) {
+                                    SessionChip(text = typeLabel, color = StoryVenueColors.Primary)
+                                }
+                                if (statusLabel != null) {
+                                    if (typeLabel != null) Spacer(Modifier.width(6.dp))
+                                    val statusColor = if (session.status == "completed")
+                                        StoryVenueColors.SubText else StoryVenueColors.Accent
+                                    SessionChip(text = statusLabel, color = statusColor)
+                                }
+                            }
+                        }
                     }
                 }
                 Spacer(Modifier.height(12.dp))
@@ -250,7 +304,22 @@ fun HomeScreen(
 
             item { Spacer(Modifier.height(16.dp)) }
         }
+        }
     }
+}
+
+@Composable
+private fun SessionChip(text: String, color: Color) {
+    Text(
+        text = text,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        color = color,
+        fontFamily = SBAggroFamily,
+        modifier = Modifier
+            .background(color.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    )
 }
 
 @Composable
@@ -262,7 +331,12 @@ fun StoryBottomNavBar(
     onProfileClick: () -> Unit = {},
 ) {
     val items = listOf("이야기", "글쓰기", "대화", "내정보")
-    val icons = listOf("📖", "🏠", "💬", "👤")
+    val icons: List<ImageVector> = listOf(
+        Icons.AutoMirrored.Filled.MenuBook,
+        Icons.Filled.Edit,
+        Icons.AutoMirrored.Filled.Chat,
+        Icons.Filled.Person,
+    )
 
     Row(
         modifier = Modifier
@@ -272,6 +346,7 @@ fun StoryBottomNavBar(
         horizontalArrangement = Arrangement.SpaceAround,
     ) {
         items.forEachIndexed { index, label ->
+            val tint = if (index == selectedIndex) StoryVenueColors.Primary else StoryVenueColors.SubText
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
@@ -285,12 +360,17 @@ fun StoryBottomNavBar(
                         }
                     },
             ) {
-                Text(text = icons[index], fontSize = 22.sp)
-                Spacer(Modifier.height(2.dp))
+                Icon(
+                    imageVector = icons[index],
+                    contentDescription = label,
+                    tint = tint,
+                    modifier = Modifier.size(24.dp),
+                )
+                Spacer(Modifier.height(4.dp))
                 Text(
                     text = label,
                     fontSize = 11.sp,
-                    color = if (index == selectedIndex) StoryVenueColors.Primary else StoryVenueColors.SubText,
+                    color = tint,
                     fontFamily = SBAggroFamily,
                     fontWeight = if (index == selectedIndex) FontWeight.Bold else FontWeight.Normal,
                 )
