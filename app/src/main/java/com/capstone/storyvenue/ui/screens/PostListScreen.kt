@@ -82,7 +82,7 @@ fun PostListScreen(
                         fontWeight = FontWeight.Bold,
                         color = StoryVenueColors.OnSurface,
                         fontFamily = SBAggroFamily,
-                        fontSize = 18.sp,
+                        fontSize = 20.sp,
                     )
                 },
                 navigationIcon = {
@@ -120,7 +120,7 @@ fun PostListScreen(
                     text = emptyMessage,
                     color = StoryVenueColors.SubText,
                     fontFamily = SBAggroFamily,
-                    fontSize = 15.sp,
+                    fontSize = 17.sp,
                 )
             }
 

@@ -110,7 +110,7 @@ fun HomeScreen(
                 ) {
                     Text(
                         text = "안녕하세요, ${userName}님",
-                        fontSize = 20.sp,
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
                         color = StoryVenueColors.OnSurface,
                         fontFamily = SBAggroFamily,
@@ -128,7 +128,7 @@ fun HomeScreen(
                     Spacer(Modifier.height(8.dp))
                     Text(
                         text = errorMessage ?: "",
-                        fontSize = 13.sp,
+                        fontSize = 15.sp,
                         color = StoryVenueColors.Error,
                         fontFamily = SBAggroFamily,
                     )
@@ -156,7 +156,7 @@ fun HomeScreen(
                         Column {
                             Text(
                                 text = "새 문답 시작",
-                                fontSize = 22.sp,
+                                fontSize = 24.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
                                 fontFamily = SBAggroFamily,
@@ -164,10 +164,10 @@ fun HomeScreen(
                             Spacer(Modifier.height(10.dp))
                             Text(
                                 text = "당신의 이야기를\n들려주세요.",
-                                fontSize = 14.sp,
+                                fontSize = 16.sp,
                                 color = Color.White.copy(alpha = 0.85f),
                                 fontFamily = SBAggroFamily,
-                                lineHeight = 22.sp,
+                                lineHeight = 24.sp,
                             )
                         }
                         Box(
@@ -177,7 +177,7 @@ fun HomeScreen(
                                 .clip(CircleShape)
                                 .background(Color.White),
                         ) {
-                            Text(text = "🎤", fontSize = 40.sp)
+                            Text(text = "🎤", fontSize = 42.sp)
                         }
                     }
                 }
@@ -191,7 +191,7 @@ fun HomeScreen(
                 ) {
                     Text(
                         text = "이전 문답",
-                        fontSize = 16.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = StoryVenueColors.Primary,
                         fontFamily = SBAggroFamily,
@@ -224,14 +224,14 @@ fun HomeScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = "문답 #${session.number}",
-                                fontSize = 15.sp,
+                                fontSize = 17.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = StoryVenueColors.OnSurface,
                                 fontFamily = SBAggroFamily,
                             )
                             Text(
                                 text = "  |  ${session.date}",
-                                fontSize = 14.sp,
+                                fontSize = 16.sp,
                                 color = StoryVenueColors.SubText,
                                 fontFamily = SBAggroFamily,
                             )
@@ -239,7 +239,7 @@ fun HomeScreen(
                         Spacer(Modifier.height(6.dp))
                         Text(
                             text = session.title,
-                            fontSize = 14.sp,
+                            fontSize = 16.sp,
                             color = StoryVenueColors.SubText,
                             fontFamily = SBAggroFamily,
                         )
@@ -285,11 +285,11 @@ fun StoryBottomNavBar(
                         }
                     },
             ) {
-                Text(text = icons[index], fontSize = 22.sp)
+                Text(text = icons[index], fontSize = 24.sp)
                 Spacer(Modifier.height(2.dp))
                 Text(
                     text = label,
-                    fontSize = 11.sp,
+                    fontSize = 13.sp,
                     color = if (index == selectedIndex) StoryVenueColors.Primary else StoryVenueColors.SubText,
                     fontFamily = SBAggroFamily,
                     fontWeight = if (index == selectedIndex) FontWeight.Bold else FontWeight.Normal,

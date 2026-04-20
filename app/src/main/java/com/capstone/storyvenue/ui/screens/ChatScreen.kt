@@ -109,7 +109,7 @@ fun ChatListScreen(
                         fontWeight = FontWeight.Bold,
                         color = StoryVenueColors.OnSurface,
                         fontFamily = SBAggroFamily,
-                        fontSize = 18.sp,
+                        fontSize = 20.sp,
                     )
                 },
                 actions = {
@@ -149,13 +149,13 @@ fun ChatListScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = "이야기에서 새로운 사람들과",
-                        fontSize = 16.sp,
+                        fontSize = 18.sp,
                         color = StoryVenueColors.SubText,
                         fontFamily = SBAggroFamily,
                     )
                     Text(
                         text = "대화로 연결해보세요!",
-                        fontSize = 16.sp,
+                        fontSize = 18.sp,
                         color = StoryVenueColors.SubText,
                         fontFamily = SBAggroFamily,
                     )
@@ -188,13 +188,13 @@ fun ChatListScreen(
                                 name = partner.userName,
                                 avatarUrl = partner.avatarUrl,
                                 size = 48.dp,
-                                fontSize = 18.sp,
+                                fontSize = 20.sp,
                             )
                             Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = partner.userName,
-                                    fontSize = 15.sp,
+                                    fontSize = 17.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = StoryVenueColors.OnSurface,
                                     fontFamily = SBAggroFamily,
@@ -202,7 +202,7 @@ fun ChatListScreen(
                                 Spacer(Modifier.height(4.dp))
                                 Text(
                                     text = partner.lastMessage,
-                                    fontSize = 13.sp,
+                                    fontSize = 15.sp,
                                     color = StoryVenueColors.SubText,
                                     fontFamily = SBAggroFamily,
                                     maxLines = 1,
@@ -211,7 +211,7 @@ fun ChatListScreen(
                             }
                             Text(
                                 text = partner.lastMessageTime,
-                                fontSize = 12.sp,
+                                fontSize = 14.sp,
                                 color = StoryVenueColors.SubText,
                                 fontFamily = SBAggroFamily,
                             )
@@ -271,7 +271,7 @@ fun ChatRoomScreen(
                         fontWeight = FontWeight.Bold,
                         color = StoryVenueColors.OnSurface,
                         fontFamily = SBAggroFamily,
-                        fontSize = 18.sp,
+                        fontSize = 20.sp,
                     )
                 },
                 navigationIcon = {
@@ -379,7 +379,7 @@ fun ChatBubble(message: ChatMessage) {
         if (message.isMine) {
             Text(
                 text = message.time,
-                fontSize = 11.sp,
+                fontSize = 13.sp,
                 color = StoryVenueColors.SubText,
                 fontFamily = SBAggroFamily,
                 modifier = Modifier.padding(end = 4.dp),
@@ -402,7 +402,7 @@ fun ChatBubble(message: ChatMessage) {
         ) {
             Text(
                 text = message.content,
-                fontSize = 14.sp,
+                fontSize = 16.sp,
                 color = if (message.isMine) Color.White else StoryVenueColors.OnSurface,
                 fontFamily = SBAggroFamily,
             )
@@ -410,7 +410,7 @@ fun ChatBubble(message: ChatMessage) {
         if (!message.isMine) {
             Text(
                 text = message.time,
-                fontSize = 11.sp,
+                fontSize = 13.sp,
                 color = StoryVenueColors.SubText,
                 fontFamily = SBAggroFamily,
                 modifier = Modifier.padding(start = 4.dp),
