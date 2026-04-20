@@ -55,13 +55,13 @@ fun StoryVenueNavGraph(
         composable(Routes.SPLASH) {
             SplashScreen(
                 hasToken = hasToken,
-                onNavigateToHome = { navController.navigate(Routes.HOME) { popUpTo(Routes.SPLASH) { inclusive = true } } },
+                onNavigateToHome = { navController.navigate(Routes.FEED) { popUpTo(Routes.SPLASH) { inclusive = true } } },
                 onNavigateToLogin = { navController.navigate(Routes.LOGIN) { popUpTo(Routes.SPLASH) { inclusive = true } } },
             )
         }
         composable(Routes.LOGIN) {
             LoginScreen(
-                onLoginSuccess = { navController.navigate(Routes.HOME) { popUpTo(Routes.LOGIN) { inclusive = true } } },
+                onLoginSuccess = { navController.navigate(Routes.FEED) { popUpTo(Routes.LOGIN) { inclusive = true } } },
                 onNavigateToSignUp = { navController.navigate(Routes.SIGNUP) },
             )
         }
