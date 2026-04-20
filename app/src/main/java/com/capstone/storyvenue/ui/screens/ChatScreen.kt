@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Card
@@ -169,20 +170,11 @@ fun ChatListScreen(
                                 modifier = Modifier.fillParentMaxSize(),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(
-                                        text = "이야기에서 새로운 사람들과",
-                                        fontSize = 16.sp,
-                                        color = StoryVenueColors.SubText,
-                                        fontFamily = SBAggroFamily,
-                                    )
-                                    Text(
-                                        text = "대화로 연결해보세요!",
-                                        fontSize = 16.sp,
-                                        color = StoryVenueColors.SubText,
-                                        fontFamily = SBAggroFamily,
-                                    )
-                                }
+                                EmptyState(
+                                    icon = Icons.AutoMirrored.Filled.Chat,
+                                    title = "아직 대화 상대가 없어요",
+                                    subtitle = "이야기에서 마음에 드는 사람에게 말을 걸어보세요.",
+                                )
                             }
                         }
                     } else {
