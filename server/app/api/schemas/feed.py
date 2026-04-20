@@ -19,6 +19,7 @@ class FeedPostResponse(BaseModel):
     title: str
     preview: str
     like_count: int
+    comment_count: int = 0
     created_at: datetime
     author_name: str | None = None
     author_avatar_url: str | None = None

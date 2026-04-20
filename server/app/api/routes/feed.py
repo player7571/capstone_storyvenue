@@ -15,6 +15,55 @@ from app.services.safety import check_content_safety
 router = APIRouter(prefix="/feed", tags=["feed"])
 
 
+def _fetch_profiles_map(sb, user_ids: list[str]) -> dict[str, dict]:
+    unique_ids = list({uid for uid in user_ids if uid})
+    if not unique_ids:
+        return {}
+    result = (
+        sb.table("profiles")
+        .select("id, name, avatar_url")
+        .in_("id", unique_ids)
+        .execute()
+    )
+    return {str(row["id"]): row for row in (result.data or [])}
+
+
+def _fetch_comment_counts(sb, post_ids: list[str]) -> dict[str, int]:
+    unique_ids = list({pid for pid in post_ids if pid})
+    if not unique_ids:
+        return {}
+    result = (
+        sb.table("feed_comments")
+        .select("post_id")
+        .in_("post_id", unique_ids)
+        .execute()
+    )
+    counts: dict[str, int] = {}
+    for row in (result.data or []):
+        pid = str(row.get("post_id"))
+        counts[pid] = counts.get(pid, 0) + 1
+    return counts
+
+
+def _attach_author(row: dict, profiles_map: dict[str, dict]) -> dict:
+    profile = profiles_map.get(str(row.get("user_id"))) or {}
+    return {
+        **row,
+        "author_name": profile.get("name"),
+        "author_avatar_url": profile.get("avatar_url"),
+    }
+
+
+def _build_post_response(
+    row: dict,
+    profiles_map: dict[str, dict],
+    comment_counts: dict[str, int],
+) -> FeedPostResponse:
+    merged = _attach_author(row, profiles_map)
+    merged["comment_count"] = comment_counts.get(str(row.get("id")), 0)
+    return FeedPostResponse(**merged)
+
+
 # ── GET /feed ─────────────────────────────────────
 @router.get("", response_model=list[FeedPostResponse])
 async def list_feed(
@@ -25,22 +74,15 @@ async def list_feed(
     sb = get_supabase()
     result = (
         sb.table("feed_posts")
-        .select("*, profiles(name, avatar_url)")
+        .select("*")
         .order("created_at", desc=True)
         .range(offset, offset + limit - 1)
         .execute()
     )
-    posts = []
-    for row in result.data:
-        profile = row.pop("profiles", None)
-        posts.append(
-            FeedPostResponse(
-                **row,
-                author_name=profile.get("name") if profile else None,
-                author_avatar_url=profile.get("avatar_url") if profile else None,
-            )
-        )
-    return posts
+    rows = result.data or []
+    profiles_map = _fetch_profiles_map(sb, [row.get("user_id") for row in rows])
+    comment_counts = _fetch_comment_counts(sb, [row.get("id") for row in rows])
+    return [_build_post_response(row, profiles_map, comment_counts) for row in rows]
 
 
 # ── POST /feed ────────────────────────────────────
@@ -71,7 +113,12 @@ async def create_feed_post(
         .execute()
     )
     data = row.data[0]
-    return FeedPostResponse(**data, author_name=None, author_avatar_url=None)
+    return FeedPostResponse(
+        **data,
+        author_name=None,
+        author_avatar_url=None,
+        comment_count=0,
+    )
 
 
 # ── GET /feed/me ─────────────────────────────────
@@ -84,23 +131,16 @@ async def list_my_feed(
     sb = get_supabase()
     result = (
         sb.table("feed_posts")
-        .select("*, profiles(name, avatar_url)")
+        .select("*")
         .eq("user_id", user_id)
         .order("created_at", desc=True)
         .range(offset, offset + limit - 1)
         .execute()
     )
-    posts = []
-    for row in result.data or []:
-        profile = row.pop("profiles", None)
-        posts.append(
-            FeedPostResponse(
-                **row,
-                author_name=profile.get("name") if profile else None,
-                author_avatar_url=profile.get("avatar_url") if profile else None,
-            )
-        )
-    return posts
+    rows = result.data or []
+    profiles_map = _fetch_profiles_map(sb, [row.get("user_id") for row in rows])
+    comment_counts = _fetch_comment_counts(sb, [row.get("id") for row in rows])
+    return [_build_post_response(row, profiles_map, comment_counts) for row in rows]
 
 
 # ── GET /feed/liked ──────────────────────────────
@@ -125,19 +165,17 @@ async def list_liked_feed(
 
     posts_result = (
         sb.table("feed_posts")
-        .select("*, profiles(name, avatar_url)")
+        .select("*")
         .in_("id", post_ids)
         .execute()
     )
-    posts_by_id = {}
-    for row in posts_result.data or []:
-        profile = row.pop("profiles", None)
-        posts_by_id[str(row["id"])] = FeedPostResponse(
-            **row,
-            author_name=profile.get("name") if profile else None,
-            author_avatar_url=profile.get("avatar_url") if profile else None,
-        )
-    # 좋아요 누른 순서 유지
+    rows = posts_result.data or []
+    profiles_map = _fetch_profiles_map(sb, [row.get("user_id") for row in rows])
+    comment_counts = _fetch_comment_counts(sb, [row.get("id") for row in rows])
+    posts_by_id = {
+        str(row["id"]): _build_post_response(row, profiles_map, comment_counts)
+        for row in rows
+    }
     return [posts_by_id[pid] for pid in post_ids if pid in posts_by_id]
 
 
@@ -150,16 +188,17 @@ async def get_feed_post(
     sb = get_supabase()
     result = (
         sb.table("feed_posts")
-        .select("*, profiles(name, avatar_url)")
+        .select("*")
         .eq("id", str(post_id))
         .maybe_single()
         .execute()
     )
-    if not result.data:
+    if result is None or not getattr(result, "data", None):
         raise HTTPException(status_code=404, detail="게시물을 찾을 수 없습니다.")
 
     row = result.data
-    profile = row.pop("profiles", None)
+    profiles_map = _fetch_profiles_map(sb, [row.get("user_id")])
+    comment_counts = _fetch_comment_counts(sb, [row.get("id")])
 
     # 내가 좋아요 했는지 확인
     like_result = (
@@ -170,13 +209,11 @@ async def get_feed_post(
         .maybe_single()
         .execute()
     )
+    liked_by_me = bool(like_result and getattr(like_result, "data", None))
 
-    return FeedDetailResponse(
-        **row,
-        author_name=profile.get("name") if profile else None,
-        author_avatar_url=profile.get("avatar_url") if profile else None,
-        liked_by_me=like_result.data is not None,
-    )
+    merged = _attach_author(row, profiles_map)
+    merged["comment_count"] = comment_counts.get(str(row.get("id")), 0)
+    return FeedDetailResponse(**merged, liked_by_me=liked_by_me)
 
 
 # ── POST /feed/{post_id}/like ────────────────────
@@ -197,6 +234,7 @@ async def toggle_like(
         .maybe_single()
         .execute()
     )
+    existing_data = getattr(existing, "data", None) if existing else None
 
     # 게시물 작성자 확인 (알림용)
     post_result = (
@@ -206,11 +244,12 @@ async def toggle_like(
         .maybe_single()
         .execute()
     )
-    post_author_id = post_result.data["user_id"] if post_result.data else None
+    post_data = getattr(post_result, "data", None) if post_result else None
+    post_author_id = post_data["user_id"] if post_data else None
 
-    if existing.data:
+    if existing_data:
         # 좋아요 취소
-        sb.table("feed_likes").delete().eq("id", existing.data["id"]).execute()
+        sb.table("feed_likes").delete().eq("id", existing_data["id"]).execute()
         sb.table("feed_posts").update(
             {"like_count": sb.table("feed_posts").select("like_count").eq("id", post_id_str).single().execute().data["like_count"] - 1}
         ).eq("id", post_id_str).execute()
@@ -226,17 +265,21 @@ async def toggle_like(
         liked = True
 
         # 좋아요 알림 생성 (본인 글이면 제외, 취소 시 생성 안 함)
+        # notifications 테이블이 없거나 실패해도 좋아요 자체는 성공 처리
         if post_author_id and post_author_id != user_id:
-            sb.table("notifications").insert(
-                {
-                    "user_id": post_author_id,
-                    "type": "like",
-                    "actor_id": user_id,
-                    "post_id": post_id_str,
-                    "message": "회원님의 글을 좋아합니다",
-                    "is_read": False,
-                }
-            ).execute()
+            try:
+                sb.table("notifications").insert(
+                    {
+                        "user_id": post_author_id,
+                        "type": "like",
+                        "actor_id": user_id,
+                        "post_id": post_id_str,
+                        "message": "회원님의 글을 좋아합니다",
+                        "is_read": False,
+                    }
+                ).execute()
+            except Exception:
+                pass
 
     # 최종 like_count 반환
     post = (
