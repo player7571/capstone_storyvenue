@@ -25,7 +25,7 @@ async def list_feed(
     sb = get_supabase()
     result = (
         sb.table("feed_posts")
-        .select("*, profiles(name)")
+        .select("*, profiles(name, avatar_url)")
         .order("created_at", desc=True)
         .range(offset, offset + limit - 1)
         .execute()
@@ -37,6 +37,7 @@ async def list_feed(
             FeedPostResponse(
                 **row,
                 author_name=profile.get("name") if profile else None,
+                author_avatar_url=profile.get("avatar_url") if profile else None,
             )
         )
     return posts
@@ -70,7 +71,7 @@ async def create_feed_post(
         .execute()
     )
     data = row.data[0]
-    return FeedPostResponse(**data, author_name=None)
+    return FeedPostResponse(**data, author_name=None, author_avatar_url=None)
 
 
 # ── GET /feed/me ─────────────────────────────────
@@ -83,7 +84,7 @@ async def list_my_feed(
     sb = get_supabase()
     result = (
         sb.table("feed_posts")
-        .select("*, profiles(name)")
+        .select("*, profiles(name, avatar_url)")
         .eq("user_id", user_id)
         .order("created_at", desc=True)
         .range(offset, offset + limit - 1)
@@ -96,6 +97,7 @@ async def list_my_feed(
             FeedPostResponse(
                 **row,
                 author_name=profile.get("name") if profile else None,
+                author_avatar_url=profile.get("avatar_url") if profile else None,
             )
         )
     return posts
@@ -123,7 +125,7 @@ async def list_liked_feed(
 
     posts_result = (
         sb.table("feed_posts")
-        .select("*, profiles(name)")
+        .select("*, profiles(name, avatar_url)")
         .in_("id", post_ids)
         .execute()
     )
@@ -133,6 +135,7 @@ async def list_liked_feed(
         posts_by_id[str(row["id"])] = FeedPostResponse(
             **row,
             author_name=profile.get("name") if profile else None,
+            author_avatar_url=profile.get("avatar_url") if profile else None,
         )
     # 좋아요 누른 순서 유지
     return [posts_by_id[pid] for pid in post_ids if pid in posts_by_id]
@@ -147,7 +150,7 @@ async def get_feed_post(
     sb = get_supabase()
     result = (
         sb.table("feed_posts")
-        .select("*, profiles(name)")
+        .select("*, profiles(name, avatar_url)")
         .eq("id", str(post_id))
         .maybe_single()
         .execute()
@@ -171,6 +174,7 @@ async def get_feed_post(
     return FeedDetailResponse(
         **row,
         author_name=profile.get("name") if profile else None,
+        author_avatar_url=profile.get("avatar_url") if profile else None,
         liked_by_me=like_result.data is not None,
     )
 

@@ -64,26 +64,28 @@ async def list_chat_partners(
         else:
             partners[pid]["unread_count"] = unread
 
-    # 프로필 이름 조회
+    # 프로필 이름·아바타 조회
     partner_ids = list(partners.keys())
-    names: dict[str, str | None] = {}
+    profile_map: dict[str, dict] = {}
     if partner_ids:
         profiles = (
             sb.table("profiles")
-            .select("id, name")
+            .select("id, name, avatar_url")
             .in_("id", partner_ids)
             .execute()
         )
         for p in profiles.data:
-            names[p["id"]] = p.get("name")
+            profile_map[p["id"]] = p
 
     # 마지막 메시지 시간 기준 정렬
     result = []
     for pid, info in partners.items():
+        profile = profile_map.get(pid, {})
         result.append(
             ChatPartnerResponse(
                 user_id=pid,
-                name=names.get(pid),
+                name=profile.get("name"),
+                avatar_url=profile.get("avatar_url"),
                 last_message=info["last_message"],
                 last_message_at=info["last_message_at"],
                 unread_count=info["unread_count"],

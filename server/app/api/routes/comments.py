@@ -20,7 +20,7 @@ async def list_comments(
     sb = get_supabase()
     result = (
         sb.table("feed_comments")
-        .select("*, profiles(name)")
+        .select("*, profiles(name, avatar_url)")
         .eq("post_id", str(post_id))
         .order("created_at", desc=False)
         .execute()
@@ -32,6 +32,7 @@ async def list_comments(
             CommentResponse(
                 **row,
                 author_name=profile.get("name") if profile else None,
+                author_avatar_url=profile.get("avatar_url") if profile else None,
             )
         )
     return comments
@@ -85,15 +86,16 @@ async def create_comment(
     )
     comment_data = row.data[0]
 
-    # 작성자 이름 조회
+    # 작성자 이름/아바타 조회
     profile = (
         sb.table("profiles")
-        .select("name")
+        .select("name, avatar_url")
         .eq("id", user_id)
         .maybe_single()
         .execute()
     )
     author_name = profile.data.get("name") if profile.data else None
+    author_avatar_url = profile.data.get("avatar_url") if profile.data else None
 
     # 알림 생성 (본인 글에 본인이 댓글 달면 제외)
     post_author_id = post.data["user_id"]
@@ -110,7 +112,11 @@ async def create_comment(
             }
         ).execute()
 
-    return CommentResponse(**comment_data, author_name=author_name)
+    return CommentResponse(
+        **comment_data,
+        author_name=author_name,
+        author_avatar_url=author_avatar_url,
+    )
 
 
 # ── DELETE /comments/{comment_id} ────────────────

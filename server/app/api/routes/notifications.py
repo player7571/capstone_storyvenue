@@ -20,7 +20,7 @@ async def list_notifications(
     sb = get_supabase()
     result = (
         sb.table("notifications")
-        .select("*, profiles!notifications_actor_id_fkey(name)")
+        .select("*, profiles!notifications_actor_id_fkey(name, avatar_url)")
         .eq("user_id", user_id)
         .order("created_at", desc=True)
         .range(offset, offset + limit - 1)
@@ -31,6 +31,7 @@ async def list_notifications(
     for row in result.data:
         profile = row.pop("profiles", None)
         actor_name = profile.get("name") if profile else None
+        actor_avatar_url = profile.get("avatar_url") if profile else None
 
         # 댓글 알림이면 댓글 내용 미리보기 포함
         comment_preview = None
@@ -50,6 +51,7 @@ async def list_notifications(
                 id=row["id"],
                 type=row["type"],
                 actor_name=actor_name,
+                actor_avatar_url=actor_avatar_url,
                 post_id=row.get("post_id"),
                 message=row["message"],
                 comment_preview=comment_preview,

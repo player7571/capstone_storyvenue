@@ -21,6 +21,7 @@ class FeedPostResponse(BaseModel):
     like_count: int
     created_at: datetime
     author_name: str | None = None
+    author_avatar_url: str | None = None
 
 
 class FeedDetailResponse(FeedPostResponse):
