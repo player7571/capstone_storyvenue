@@ -116,7 +116,7 @@ fun ProfileScreen(
             avatarUrl = it.avatarUrl
             it.avatarUrl?.let { url -> loadAvatar(url) }
         }.onFailure { e ->
-            errorMessage = e.message ?: "프로필을 불러오지 못했습니다."
+            errorMessage = e.message ?: "내정보를 불러오지 못했습니다."
         }
     }
 
@@ -152,9 +152,9 @@ fun ProfileScreen(
                 avatarUrl = profile.avatarUrl
                 avatarBitmap = null
                 profile.avatarUrl?.let { url -> loadAvatar(url) }
-                infoMessage = "프로필 사진이 변경되었습니다."
+                infoMessage = "사진이 변경되었습니다."
             }.onFailure { e ->
-                errorMessage = e.message ?: "프로필 사진 업로드에 실패했습니다."
+                errorMessage = e.message ?: "사진 올리기에 실패했습니다."
             }
         }
     }
@@ -207,7 +207,7 @@ fun ProfileScreen(
             onDismissRequest = { if (!isSavingEdit) showEditDialog = false },
             title = {
                 Text(
-                    text = "프로필 수정",
+                    text = "내정보 수정",
                     fontFamily = SBAggroFamily,
                     fontWeight = FontWeight.Bold,
                 )
@@ -250,9 +250,9 @@ fun ProfileScreen(
                                 userName = it.name
                                 userEmail = it.email
                                 showEditDialog = false
-                                infoMessage = "프로필이 수정되었습니다."
+                                infoMessage = "내정보가 수정되었습니다."
                             }.onFailure { e ->
-                                errorMessage = e.message ?: "프로필 수정에 실패했습니다."
+                                errorMessage = e.message ?: "내정보 수정에 실패했습니다."
                             }
                         }
                     },
@@ -351,7 +351,7 @@ fun ProfileScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "내 프로필",
+                        text = "내정보",
                         fontWeight = FontWeight.Bold,
                         color = StoryVenueColors.OnSurface,
                         fontFamily = SBAggroFamily,
@@ -410,7 +410,7 @@ fun ProfileScreen(
                     isUploadingAvatar -> CircularProgressIndicator(color = Color.White)
                     bitmap != null -> Image(
                         bitmap = bitmap,
-                        contentDescription = "프로필 사진",
+                        contentDescription = "사진",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize().clip(CircleShape),
                     )
@@ -479,7 +479,7 @@ fun ProfileScreen(
             ProfileMenuItem(text = "좋아요한 글", onClick = onLikedPosts, textColor = StoryVenueColors.Primary)
             Spacer(Modifier.height(12.dp))
             ProfileMenuItem(
-                text = "프로필 수정",
+                text = "내정보 수정",
                 onClick = {
                     onEditProfile()
                     editName = userName

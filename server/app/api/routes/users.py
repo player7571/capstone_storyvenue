@@ -34,7 +34,7 @@ def _get_profile_or_404(user_id: str) -> dict:
     if not result.data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="프로필 정보를 찾을 수 없습니다.",
+            detail="내정보를 찾을 수 없습니다.",
         )
     return result.data
 
@@ -65,7 +65,7 @@ async def update_me(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="프로필 수정 중 오류가 발생했습니다.",
+                detail="내정보 수정 중 오류가 발생했습니다.",
             ) from exc
 
     return UserProfileResponse(**_get_profile_or_404(user_id))
@@ -81,7 +81,7 @@ async def upload_avatar(
     if content_type not in SUPPORTED_AVATAR_TYPES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="JPEG 또는 PNG 이미지 파일만 업로드할 수 있습니다.",
+            detail="JPEG 또는 PNG 이미지 파일만 올릴 수 있습니다.",
         )
     if not image_bytes:
         raise HTTPException(
@@ -113,7 +113,7 @@ async def upload_avatar(
         signed = bucket.create_signed_url(storage_path, SIGNED_URL_EXPIRES_IN)
         avatar_url = signed.get("signedURL") or signed.get("signedUrl")
         if not avatar_url:
-            raise RuntimeError("업로드한 이미지의 URL을 생성하지 못했습니다.")
+            raise RuntimeError("올린 이미지의 주소를 생성하지 못했습니다.")
 
         sb.table("profiles").update({"avatar_url": str(avatar_url)}).eq(
             "id", user_id
@@ -123,7 +123,7 @@ async def upload_avatar(
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"프로필 사진 업로드 중 오류가 발생했습니다: {exc}",
+            detail=f"사진 올리기 중 오류가 발생했습니다: {exc}",
         ) from exc
 
     return UserProfileResponse(**_get_profile_or_404(user_id))

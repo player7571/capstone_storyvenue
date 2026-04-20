@@ -77,11 +77,11 @@ fun HomeScreen(
 
         val profileResult = withContext(Dispatchers.IO) { ApiService.getProfile(token) }
         profileResult.onSuccess { userName = it.name.ifBlank { "이름" } }
-            .onFailure { e -> errorMessage = e.message ?: "프로필을 불러오지 못했습니다." }
+            .onFailure { e -> errorMessage = e.message ?: "내정보를 불러오지 못했습니다." }
 
         val sessionsResult = withContext(Dispatchers.IO) { ApiService.getSessions(token) }
         sessionsResult.onSuccess { sessions = it }
-            .onFailure { e -> errorMessage = e.message ?: "세션 목록을 불러오지 못했습니다." }
+            .onFailure { e -> errorMessage = e.message ?: "문답 목록을 불러오지 못했습니다." }
     }
     Scaffold(
         containerColor = StoryVenueColors.Background,
@@ -155,7 +155,7 @@ fun HomeScreen(
                     ) {
                         Column {
                             Text(
-                                text = "새 인터뷰 시작",
+                                text = "새 문답 시작",
                                 fontSize = 22.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
@@ -190,7 +190,7 @@ fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "이전 인터뷰",
+                        text = "이전 문답",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = StoryVenueColors.Primary,
@@ -223,7 +223,7 @@ fun HomeScreen(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "인터뷰 #${session.number}",
+                                text = "문답 #${session.number}",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = StoryVenueColors.OnSurface,
@@ -261,7 +261,7 @@ fun StoryBottomNavBar(
     onChatClick: () -> Unit = {},
     onProfileClick: () -> Unit = {},
 ) {
-    val items = listOf("피드", "홈", "채팅", "프로필")
+    val items = listOf("이야기", "글쓰기", "대화", "내정보")
     val icons = listOf("📖", "🏠", "💬", "👤")
 
     Row(
