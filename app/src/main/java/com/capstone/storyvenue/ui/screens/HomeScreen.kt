@@ -127,8 +127,7 @@ fun HomeScreen(
             sessions = reindexSessions(sessions.filterNot { it.id == session.id })
             snackbarHostState.showSnackbar("문답이 삭제되었습니다.")
         } else {
-            val e = result.exceptionOrNull()
-            errorMessage = e.message ?: "문답 삭제에 실패했습니다."
+            errorMessage = result.exceptionOrNull()?.message ?: "문답 삭제에 실패했습니다."
         }
     }
 
@@ -392,17 +391,22 @@ fun HomeScreen(
                             IconButton(
                                 onClick = { sessionPendingDelete = session },
                                 enabled = deletingSessionId == null,
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .clip(CircleShape)
-                                    .background(StoryVenueColors.Background),
+                                modifier = Modifier.size(28.dp),
                             ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Close,
-                                    contentDescription = "문답 삭제",
-                                    tint = StoryVenueColors.SubText,
-                                    modifier = Modifier.size(16.dp),
-                                )
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(StoryVenueColors.Background),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = "문답 삭제",
+                                        tint = StoryVenueColors.SubText,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
                             }
                         }
                     }
