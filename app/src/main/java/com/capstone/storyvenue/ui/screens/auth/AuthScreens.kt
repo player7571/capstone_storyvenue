@@ -194,10 +194,10 @@ fun ProfileAvatar(name: String, sizeDp: Int = 40, modifier: Modifier = Modifier)
 
 @Composable
 fun SplashScreen(
-    hasToken: Boolean,
     onNavigateToHome: () -> Unit,
     onNavigateToLogin: () -> Unit,
 ) {
+    val context = LocalContext.current
     var visible by remember { mutableStateOf(false) }
     val alpha by animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
@@ -207,7 +207,26 @@ fun SplashScreen(
     LaunchedEffect(Unit) {
         visible = true
         delay(2000L)
-        if (hasToken) onNavigateToHome() else onNavigateToLogin()
+        val prefs = context.getSharedPreferences("storyvenue", Context.MODE_PRIVATE)
+        val token = prefs.getString("access_token", null)
+        if (token.isNullOrBlank()) {
+            onNavigateToLogin()
+            return@LaunchedEffect
+        }
+
+        val isValidToken = withContext(Dispatchers.IO) {
+            ApiService.getProfile(token).isSuccess
+        }
+
+        if (isValidToken) {
+            onNavigateToHome()
+        } else {
+            prefs.edit()
+                .remove("access_token")
+                .remove("user_id")
+                .apply()
+            onNavigateToLogin()
+        }
     }
     Box(
         contentAlignment = Alignment.Center,

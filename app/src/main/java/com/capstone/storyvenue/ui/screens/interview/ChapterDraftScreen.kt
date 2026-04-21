@@ -125,7 +125,7 @@ fun ChapterDraftScreen(
     sessionId: String     = "",
     chapterType: String   = "childhood",
     onBack: () -> Unit    = {},
-    onAddToBook: (ChapterDraft) -> Unit = {}
+    onAddToBook: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val prefs = context.getSharedPreferences("storyvenue", Context.MODE_PRIVATE)
@@ -216,8 +216,8 @@ fun ChapterDraftScreen(
                 onRegenerate = ::regenerate,
                 onAddToBook  = {
                     draft?.let { d ->
-                        Log.d("ChapterDraft", "책에 추가 클릭 — title=${d.title}")
-                        onAddToBook(d)
+                        Log.d("ChapterDraft", "책에 추가 클릭 — title=${d.title}, sessionId=$sessionId")
+                        onAddToBook(sessionId)
                     }
                 },
                 modifier = Modifier.padding(bottom = 24.dp)

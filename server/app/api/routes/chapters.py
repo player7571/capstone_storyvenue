@@ -9,10 +9,11 @@ from app.api.schemas.chapters import (
     ChapterUpdateRequest,
 )
 from app.db.supabase import get_supabase
-from app.services.adaptive_interview import (
+from app.services.interview import (
     build_question_answer_conversation_history,
     derive_voice_interview_state_from_session_messages,
     is_voice_interview_state_message,
+    load_voice_interview_state_from_store,
 )
 from app.services import generate_chapter_content
 
@@ -57,6 +58,16 @@ def _get_chapter_or_404(chapter_id: UUID, user_id: str) -> dict:
 
 
 def _load_conversation_history(session_id: UUID) -> list[dict[str, str]]:
+    try:
+        state = load_voice_interview_state_from_store(session_id)
+    except Exception:
+        state = None
+
+    if state is not None:
+        question_answer_history = build_question_answer_conversation_history(state)
+        if question_answer_history:
+            return question_answer_history
+
     result = (
         get_supabase()
         .table("session_messages")
@@ -67,8 +78,8 @@ def _load_conversation_history(session_id: UUID) -> list[dict[str, str]]:
     )
 
     rows = result.data or []
-    state = derive_voice_interview_state_from_session_messages(rows)
-    question_answer_history = build_question_answer_conversation_history(state)
+    legacy_state = derive_voice_interview_state_from_session_messages(rows)
+    question_answer_history = build_question_answer_conversation_history(legacy_state)
     if question_answer_history:
         return question_answer_history
 
