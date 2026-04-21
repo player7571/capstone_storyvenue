@@ -1,10 +1,12 @@
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
+import re
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from openai import OpenAI
+from pydantic import BaseModel, Field
 
 from app.api.dependencies.auth import get_current_user_id
 from app.api.schemas.voice import VoiceTurnResponse
@@ -18,6 +20,14 @@ INTERVIEWER_SYSTEM_PROMPT = (
     "사용자의 이야기를 깊이 있게 끌어내세요."
 )
 AUDIO_CACHE_DIR = Path(__file__).resolve().parents[3] / ".generated-audio"
+
+
+class UserAnswerInsights(BaseModel):
+    summary: str = Field(min_length=1, description="사용자 답변 핵심 요약 한 문장")
+    anchor_phrases: list[str] = Field(
+        default_factory=list,
+        description="원문에서 그대로 발췌한 근거 문구 1~3개",
+    )
 
 
 @lru_cache
@@ -109,22 +119,88 @@ def _transcribe_audio(audio_bytes: bytes, filename: str | None) -> str:
     return user_text
 
 
-def _generate_assistant_reply(history: list[dict[str, str]]) -> str:
-    response = _get_openai_client().responses.create(
-        model="gpt-4.1-mini",
-        input=[
-            {"role": "system", "content": INTERVIEWER_SYSTEM_PROMPT},
-            *history,
-        ],
-        temperature=0.7,
+def _normalize_stt_text(user_text: str) -> str:
+    normalized = re.sub(r"\s+", " ", user_text).strip()
+    normalized = re.sub(r"\s+([,.!?])", r"\1", normalized)
+    return normalized
+
+
+def _validate_anchor_phrases(anchor_phrases: list[str], source_text: str) -> list[str]:
+    valid: list[str] = []
+    for raw in anchor_phrases:
+        phrase = str(raw).strip().strip("\"'“”")
+        if len(phrase) < 2:
+            continue
+        if phrase not in source_text:
+            continue
+        if phrase in valid:
+            continue
+        valid.append(phrase)
+        if len(valid) >= 2:
+            break
+    return valid
+
+
+def _fallback_anchor_phrases(source_text: str) -> list[str]:
+    candidates: list[str] = []
+    for segment in re.split(r"[.!?。\n]+", source_text):
+        seg = segment.strip()
+        if len(seg) < 6:
+            continue
+        candidates.append(seg[:24].strip())
+        if len(candidates) >= 2:
+            break
+    if not candidates and source_text:
+        candidates.append(source_text[:24].strip())
+    return [p for p in candidates if p]
+
+
+def _analyze_user_answer(source_text: str) -> UserAnswerInsights:
+    cleaned = source_text.strip()
+    if not cleaned:
+        return UserAnswerInsights(summary="", anchor_phrases=[])
+
+    sentences = [
+        part.strip()
+        for part in re.split(r"(?<=[.!?])\s+|\n+", cleaned)
+        if part.strip()
+    ]
+    if not sentences:
+        sentences = [cleaned]
+
+    # STT 원문 내부에서만 요약/근거를 추출해 환각을 줄입니다.
+    summary = " ".join(sentences[:2]).strip()
+    if len(summary) > 120:
+        summary = summary[:120].rstrip() + "..."
+
+    anchors = _fallback_anchor_phrases(cleaned)
+    return UserAnswerInsights(
+        summary=summary or cleaned[:90].strip(),
+        anchor_phrases=anchors,
     )
-    assistant_text = str(getattr(response, "output_text", "")).strip()
-    if not assistant_text:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="AI 응답 생성에 실패했습니다.",
+
+
+def _build_grounded_follow_up_question(anchor_phrases: list[str]) -> str:
+    if len(anchor_phrases) >= 2:
+        return (
+            f"말씀해주신 '{anchor_phrases[0]}'와 '{anchor_phrases[1]}' 장면에서, "
+            "그 순간 마음이 가장 편안해졌던 이유를 조금 더 들려주실 수 있을까요?"
         )
-    return assistant_text
+    if len(anchor_phrases) == 1:
+        return (
+            f"말씀해주신 '{anchor_phrases[0]}' 장면에서 "
+            "그때 가장 선명했던 소리나 냄새는 무엇이었나요?"
+        )
+    return "방금 이야기에서 가장 마음이 놓였던 순간을 조금 더 자세히 들려주실 수 있을까요?"
+
+
+def _generate_assistant_reply_from_user_text(user_text: str) -> str:
+    insights = _analyze_user_answer(user_text)
+    follow_up = _build_grounded_follow_up_question(insights.anchor_phrases)
+    summary = insights.summary.strip()
+    if summary:
+        return f"정리하면, {summary}\n{follow_up}"
+    return follow_up
 
 
 def _extract_tts_bytes(tts_response: object) -> bytes:
@@ -173,11 +249,11 @@ async def voice_turn(
 
     try:
         audio_bytes = await audio_file.read()
-        user_text = _transcribe_audio(audio_bytes, audio_file.filename)
+        raw_user_text = _transcribe_audio(audio_bytes, audio_file.filename)
+        user_text = _normalize_stt_text(raw_user_text)
         _insert_session_message(session_id, "user", user_text)
 
-        history = _load_conversation_history(session_id)
-        assistant_text = _generate_assistant_reply(history)
+        assistant_text = _generate_assistant_reply_from_user_text(user_text)
         _insert_session_message(session_id, "assistant", assistant_text)
 
         tts_audio = _synthesize_tts(assistant_text)
