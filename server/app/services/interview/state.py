@@ -9,6 +9,7 @@ from app.services.interview.types import (
     INTERVIEW_STATE_PREFIX,
     INTERVIEW_STATE_ROLE,
     QuestionStatus,
+    StoryQuality,
     VoiceInterviewPromptState,
     VoiceInterviewState,
 )
@@ -20,6 +21,34 @@ def build_initial_voice_interview_state() -> VoiceInterviewState:
 
 def _question_key(question_no: int) -> str:
     return str(question_no)
+
+
+_STORY_QUALITY_RANK: dict[StoryQuality, int] = {
+    "none": 0,
+    "basic": 1,
+    "ready": 2,
+}
+
+
+def _normalize_story_quality(value: str | None) -> StoryQuality:
+    normalized = str(value or "").strip().lower()
+    if normalized in _STORY_QUALITY_RANK:
+        return normalized  # type: ignore[return-value]
+    return "none"
+
+
+def merge_story_qualities(*values: str | None) -> StoryQuality:
+    best: StoryQuality = "none"
+    best_rank = _STORY_QUALITY_RANK[best]
+
+    for value in values:
+        normalized = _normalize_story_quality(value)
+        rank = _STORY_QUALITY_RANK[normalized]
+        if rank > best_rank:
+            best = normalized
+            best_rank = rank
+
+    return best
 
 
 def _dedupe_answers(answers: list[str]) -> list[str]:
@@ -36,6 +65,49 @@ def _dedupe_answers(answers: list[str]) -> list[str]:
     return cleaned
 
 
+def _normalize_question_story_qualities(state: VoiceInterviewState) -> dict[str, StoryQuality]:
+    normalized: dict[str, StoryQuality] = {}
+
+    for key, value in state.question_story_qualities.items():
+        normalized_key = str(key).strip()
+        if not normalized_key:
+            continue
+        quality = _normalize_story_quality(value)
+        if quality == "none":
+            continue
+        normalized[normalized_key] = quality
+
+    return normalized
+
+
+def _normalize_question_statuses(state: VoiceInterviewState) -> dict[str, str]:
+    normalized = {
+        str(key): str(value).strip().lower()
+        for key, value in state.question_statuses.items()
+        if str(key).strip() and str(value).strip()
+    }
+
+    for question_no in range(1, get_total_question_count() + 1):
+        key = _question_key(question_no)
+        if key in normalized:
+            continue
+        has_answer = bool(get_question_answers(state, question_no))
+        story_quality = get_question_story_quality(state, question_no)
+        if question_no == state.current_question_no:
+            if has_answer and story_quality == "ready":
+                normalized[key] = "completed"
+            else:
+                normalized[key] = "in_progress"
+        elif has_answer:
+            normalized[key] = "completed" if story_quality == "ready" else "answered"
+        elif question_no < state.current_question_no:
+            normalized[key] = "skipped"
+        else:
+            normalized[key] = "pending"
+
+    return normalized
+
+
 def get_question_answers(
     state: VoiceInterviewState,
     question_no: int,
@@ -48,6 +120,63 @@ def get_question_answers(
         return _dedupe_answers(state.collected_answers)
 
     return []
+
+
+def get_question_answer_count(
+    state: VoiceInterviewState,
+    question_no: int,
+) -> int:
+    return len(get_question_answers(state, question_no))
+
+
+def get_question_story_quality(
+    state: VoiceInterviewState,
+    question_no: int,
+) -> StoryQuality:
+    stored_quality = _normalize_question_story_qualities(state).get(_question_key(question_no), "none")
+    answers = get_question_answers(state, question_no)
+    if not answers:
+        return merge_story_qualities(stored_quality, "none")
+
+    aggregated_answer = "\n".join(answer.strip() for answer in answers if answer.strip())
+    computed_quality: StoryQuality = "basic"
+
+    if question_no == state.current_question_no and state.last_decision == "pass":
+        computed_quality = "ready"
+    elif len(answers) >= 2 or len(aggregated_answer) >= 60:
+        computed_quality = "ready"
+
+    return merge_story_qualities(stored_quality, computed_quality)
+
+
+def is_question_story_ready(
+    state: VoiceInterviewState,
+    question_no: int,
+) -> bool:
+    return get_question_story_quality(state, question_no) in {"basic", "ready"}
+
+
+def get_story_generation_target_question_no(
+    state: VoiceInterviewState,
+) -> int | None:
+    total_questions = get_total_question_count()
+    current_question_no = min(max(state.current_question_no, 1), total_questions)
+
+    if (
+        get_question_answer_count(state, current_question_no) > 0
+        and is_question_story_ready(state, current_question_no)
+    ):
+        return current_question_no
+
+    search_start = total_questions if state.is_interview_complete else current_question_no - 1
+    for question_no in range(search_start, 0, -1):
+        if (
+            get_question_answer_count(state, question_no) > 0
+            and is_question_story_ready(state, question_no)
+        ):
+            return question_no
+
+    return None
 
 
 def _with_question_answers(
@@ -86,12 +215,35 @@ def _hydrate_legacy_state(state: VoiceInterviewState) -> VoiceInterviewState:
         for key, value in state.question_answers.items()
         if _dedupe_answers(value)
     }
+    hydrated_story_qualities = _normalize_question_story_qualities(state)
     return state.model_copy(
         update={
             "question_answers": hydrated_answers,
             "collected_answers": _dedupe_answers(state.collected_answers),
+            "question_story_qualities": hydrated_story_qualities,
+            "question_statuses": _normalize_question_statuses(
+                state.model_copy(
+                    update={
+                        "question_answers": hydrated_answers,
+                        "collected_answers": _dedupe_answers(state.collected_answers),
+                        "question_story_qualities": hydrated_story_qualities,
+                    }
+                )
+            ),
         }
     )
+
+
+def is_question_completed(
+    state: VoiceInterviewState,
+    question_no: int,
+) -> bool:
+    status = _normalize_question_statuses(state).get(_question_key(question_no), "pending")
+    return status in {"completed", "skipped"}
+
+
+def can_move_to_next_question(state: VoiceInterviewState) -> bool:
+    return is_question_completed(state, state.current_question_no)
 
 
 def serialize_voice_interview_state(state: VoiceInterviewState) -> str:
@@ -176,6 +328,7 @@ def move_voice_interview_question(
         state.current_question_no,
         get_question_answers(state, state.current_question_no),
     )
+    preserved_story_qualities = _normalize_question_story_qualities(state)
 
     if direction == "previous":
         if state.is_interview_complete:
@@ -198,20 +351,23 @@ def move_voice_interview_question(
     target_answers = _dedupe_answers(
         preserved_question_answers.get(_question_key(target_question_no), [])
     )
-    return VoiceInterviewState(
-        current_question_no=target_question_no,
-        follow_up_count=0,
-        last_follow_up_question=None,
-        collected_answers=target_answers,
-        question_answers=preserved_question_answers,
-        question_bank_version=state.question_bank_version or QUESTION_BANK_VERSION,
-        is_interview_complete=is_complete,
-        last_decision=None,
-        last_reason_code=None,
-        last_total_score=0,
-        last_required_slot_hits=0,
-        last_selected_missing_slot=None,
-        last_pass_route=None,
+    return _hydrate_legacy_state(
+        VoiceInterviewState(
+            current_question_no=target_question_no,
+            follow_up_count=0,
+            last_follow_up_question=None,
+            collected_answers=target_answers,
+            question_answers=preserved_question_answers,
+            question_story_qualities=preserved_story_qualities,
+            question_bank_version=state.question_bank_version or QUESTION_BANK_VERSION,
+            is_interview_complete=is_complete,
+            last_decision=None,
+            last_reason_code=None,
+            last_total_score=0,
+            last_required_slot_hits=0,
+            last_selected_missing_slot=None,
+            last_pass_route=None,
+        )
     )
 
 
@@ -219,6 +375,25 @@ def build_voice_interview_prompt_state(
     state: VoiceInterviewState,
 ) -> VoiceInterviewPromptState:
     total_questions = get_total_question_count()
+    answer_count = get_question_answer_count(state, state.current_question_no)
+    story_quality = get_question_story_quality(state, state.current_question_no)
+    story_ready = story_quality in {"basic", "ready"}
+    story_target_question_no = get_story_generation_target_question_no(state)
+    story_target_answer_count = (
+        get_question_answer_count(state, story_target_question_no)
+        if story_target_question_no is not None
+        else 0
+    )
+    story_target_story_quality = (
+        get_question_story_quality(state, story_target_question_no)
+        if story_target_question_no is not None
+        else "none"
+    )
+    story_target_story_ready = (
+        story_target_story_quality in {"basic", "ready"}
+        and story_target_answer_count > 0
+    )
+    story_target_is_current_question = story_target_question_no == state.current_question_no
     if state.is_interview_complete:
         return VoiceInterviewPromptState(
             current_question_no=total_questions,
@@ -229,13 +404,28 @@ def build_voice_interview_prompt_state(
             question_status="completed",
             progress_percent=100,
             is_interview_complete=True,
+            current_question_has_answer=answer_count > 0,
+            current_question_answer_count=answer_count,
+            current_question_story_ready=story_ready,
+            current_question_story_quality=story_quality,
+            story_target_question_no=story_target_question_no,
+            story_target_has_answer=story_target_answer_count > 0,
+            story_target_answer_count=story_target_answer_count,
+            story_target_story_ready=story_target_story_ready,
+            story_target_story_quality=story_target_story_quality,
+            story_target_is_current_question=story_target_is_current_question,
         )
 
     question = get_interview_question(state.current_question_no)
     progress_percent = int((question.question_no / total_questions) * 100)
-    question_status: QuestionStatus = (
-        "follow_up" if state.follow_up_count > 0 and state.last_follow_up_question else "main"
-    )
+    current_question_completed = story_quality == "ready" and answer_count > 0
+    question_status: QuestionStatus
+    if current_question_completed:
+        question_status = "completed"
+    elif state.follow_up_count > 0 and state.last_follow_up_question:
+        question_status = "follow_up"
+    else:
+        question_status = "main"
 
     return VoiceInterviewPromptState(
         current_question_no=question.question_no,
@@ -246,4 +436,16 @@ def build_voice_interview_prompt_state(
         question_status=question_status,
         progress_percent=progress_percent,
         is_interview_complete=False,
+        current_question_has_answer=answer_count > 0,
+        current_question_answer_count=answer_count,
+        current_question_story_ready=story_ready,
+        current_question_story_quality=story_quality,
+        current_question_completed=current_question_completed,
+        current_question_can_move_next=current_question_completed,
+        story_target_question_no=story_target_question_no,
+        story_target_has_answer=story_target_answer_count > 0,
+        story_target_answer_count=story_target_answer_count,
+        story_target_story_ready=story_target_story_ready,
+        story_target_story_quality=story_target_story_quality,
+        story_target_is_current_question=story_target_is_current_question,
     )

@@ -29,7 +29,7 @@ object Routes {
     const val SIGNUP          = "signup"
     const val HOME            = "home"
     const val VOICE_INTERVIEW = "voice_interview?sessionId={sessionId}"
-    const val CHAPTER_DRAFT   = "chapter_draft/{sessionId}?chapterType={chapterType}"
+    const val CHAPTER_DRAFT   = "chapter_draft/{sessionId}?questionNo={questionNo}&chapterType={chapterType}&allowBasic={allowBasic}"
     const val BOOK_PREVIEW    = "book_preview/{sessionId}"
     const val FEED            = "feed"
     const val FEED_DETAIL     = "feed_detail/{postId}"
@@ -43,8 +43,16 @@ object Routes {
     fun chatRoom(userId: String) = "chat_room/$userId"
     fun voiceInterview(sessionId: String? = null) =
         if (sessionId.isNullOrBlank()) "voice_interview" else "voice_interview?sessionId=$sessionId"
-    fun chapterDraft(sessionId: String, chapterType: String = "childhood") =
-        "chapter_draft/$sessionId?chapterType=$chapterType"
+    fun chapterDraft(
+        sessionId: String,
+        questionNo: Int? = null,
+        chapterType: String? = null,
+        allowBasic: Boolean = false,
+    ): String {
+        val safeQuestionNo = questionNo ?: -1
+        val safeChapterType = chapterType ?: ""
+        return "chapter_draft/$sessionId?questionNo=$safeQuestionNo&chapterType=$safeChapterType&allowBasic=$allowBasic"
+    }
     fun bookPreview(sessionId: String) = "book_preview/$sessionId"
 }
 
@@ -95,8 +103,15 @@ fun StoryVenueNavGraph(
             VoiceInterviewScreen(
                 initialSessionId = sessionId,
                 onBack = { navController.popBackStack() },
-                onGenerateChapter = { sid, chapterType ->
-                    navController.navigate(Routes.chapterDraft(sid, chapterType))
+                onGenerateChapter = { sid, questionNo, chapterType, allowBasic ->
+                    navController.navigate(
+                        Routes.chapterDraft(
+                            sessionId = sid,
+                            questionNo = questionNo,
+                            chapterType = chapterType,
+                            allowBasic = allowBasic,
+                        )
+                    )
                 },
             )
         }
@@ -104,17 +119,29 @@ fun StoryVenueNavGraph(
             route = Routes.CHAPTER_DRAFT,
             arguments = listOf(
                 navArgument("sessionId") { type = NavType.StringType },
+                navArgument("questionNo") {
+                    type = NavType.IntType
+                    defaultValue = -1
+                },
                 navArgument("chapterType") {
                     type = NavType.StringType
-                    defaultValue = "childhood"
+                    defaultValue = ""
+                },
+                navArgument("allowBasic") {
+                    type = NavType.BoolType
+                    defaultValue = false
                 },
             ),
         ) { back ->
             val sessionId = back.arguments?.getString("sessionId") ?: ""
-            val chapterType = back.arguments?.getString("chapterType") ?: "childhood"
+            val questionNo = back.arguments?.getInt("questionNo")?.takeIf { it > 0 }
+            val chapterType = back.arguments?.getString("chapterType")?.takeIf { it.isNotBlank() }
+            val allowBasic = back.arguments?.getBoolean("allowBasic") ?: false
             ChapterDraftScreen(
                 sessionId = sessionId,
+                questionNo = questionNo,
                 chapterType = chapterType,
+                allowBasic = allowBasic,
                 onBack = { navController.popBackStack() },
                 onAddToBook = { selectedSessionId ->
                     navController.navigate(Routes.bookPreview(selectedSessionId))

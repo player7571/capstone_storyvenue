@@ -9,6 +9,7 @@ import java.time.temporal.ChronoUnit
 
 internal val API_BASE_URL: String = ApiHttp.BASE_URL
 internal val apiClient = ApiHttp.client
+internal val apiChapterClient = ApiHttp.chapterClient
 internal val apiVoiceClient = ApiHttp.voiceClient
 internal val apiJsonType = ApiHttp.JSON_TYPE
 
@@ -97,6 +98,20 @@ internal fun parseInterviewState(json: JSONObject?): InterviewPromptData? {
         questionStatus = json.optString("question_status", "main"),
         progressPercent = json.optInt("progress_percent", 0),
         isInterviewComplete = json.optBoolean("is_interview_complete", false),
+        currentQuestionHasAnswer = json.optBoolean("current_question_has_answer", false),
+        currentQuestionAnswerCount = json.optInt("current_question_answer_count", 0),
+        currentQuestionStoryReady = json.optBoolean("current_question_story_ready", false),
+        currentQuestionStoryQuality = json.optString("current_question_story_quality", "none"),
+        storyTargetQuestionNo = if (json.has("story_target_question_no") && !json.isNull("story_target_question_no")) {
+            json.optInt("story_target_question_no")
+        } else {
+            null
+        },
+        storyTargetHasAnswer = json.optBoolean("story_target_has_answer", false),
+        storyTargetAnswerCount = json.optInt("story_target_answer_count", 0),
+        storyTargetStoryReady = json.optBoolean("story_target_story_ready", false),
+        storyTargetStoryQuality = json.optString("story_target_story_quality", "none"),
+        storyTargetIsCurrentQuestion = json.optBoolean("story_target_is_current_question", true),
     )
 }
 

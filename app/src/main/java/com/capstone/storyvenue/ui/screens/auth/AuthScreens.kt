@@ -73,6 +73,7 @@ fun StoryButton(
     modifier: Modifier = Modifier,
     variant: ButtonVariant = ButtonVariant.Primary,
     isLoading: Boolean = false,
+    enabled: Boolean = true,
 ) {
     val bgColor = when (variant) {
         ButtonVariant.Accent -> StoryVenueColors.Accent
@@ -81,10 +82,10 @@ fun StoryButton(
     }
     Button(
         onClick = onClick,
-        enabled = !isLoading,
+        enabled = enabled && !isLoading,
         colors = ButtonDefaults.buttonColors(
             containerColor = bgColor,
-            disabledContainerColor = bgColor,
+            disabledContainerColor = bgColor.copy(alpha = 0.45f),
         ),
         shape = RoundedCornerShape(50.dp),
         modifier = modifier.fillMaxWidth().height(60.dp),

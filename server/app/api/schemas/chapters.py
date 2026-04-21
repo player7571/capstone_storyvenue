@@ -9,7 +9,9 @@ ChapterType = Literal["childhood", "youth", "career", "love", "reflection"]
 
 class ChapterGenerateRequest(BaseModel):
     session_id: UUID
-    chapter_type: ChapterType
+    question_no: int | None = Field(default=None, ge=1, le=10)
+    chapter_type: ChapterType | None = None
+    allow_basic: bool = False
 
 
 class ChapterUpdateRequest(BaseModel):
@@ -24,5 +26,7 @@ class ChapterResponse(BaseModel):
     title: str
     content: str
     chapter_type: ChapterType
+    source_question_no: int | None = None
     version_no: int
+    story_quality_at_generation: str | None = None
     created_at: datetime

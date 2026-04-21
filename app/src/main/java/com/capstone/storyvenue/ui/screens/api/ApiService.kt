@@ -75,8 +75,16 @@ object ApiService {
     fun generateChapter(
         token: String,
         sessionId: String,
-        chapterType: String,
-    ): Result<GeneratedChapterData> = ChapterBookApi.generateChapter(token, sessionId, chapterType)
+        questionNo: Int? = null,
+        chapterType: String? = null,
+        allowBasic: Boolean = false,
+    ): Result<GeneratedChapterData> = ChapterBookApi.generateChapter(
+        token = token,
+        sessionId = sessionId,
+        questionNo = questionNo,
+        chapterType = chapterType,
+        allowBasic = allowBasic,
+    )
 
     // ── Chapters / Books ─────────────────────────────
     fun listChapters(token: String, sessionId: String? = null): Result<List<ChapterDraftData>> =
@@ -200,6 +208,16 @@ data class InterviewPromptData(
     val questionStatus: String = "main",
     val progressPercent: Int = 0,
     val isInterviewComplete: Boolean = false,
+    val currentQuestionHasAnswer: Boolean = false,
+    val currentQuestionAnswerCount: Int = 0,
+    val currentQuestionStoryReady: Boolean = false,
+    val currentQuestionStoryQuality: String = "none",
+    val storyTargetQuestionNo: Int? = null,
+    val storyTargetHasAnswer: Boolean = false,
+    val storyTargetAnswerCount: Int = 0,
+    val storyTargetStoryReady: Boolean = false,
+    val storyTargetStoryQuality: String = "none",
+    val storyTargetIsCurrentQuestion: Boolean = true,
 )
 
 data class SessionMessageData(
@@ -215,6 +233,8 @@ data class GeneratedChapterData(
     val title: String,
     val content: String,
     val chapterType: String,
+    val sourceQuestionNo: Int? = null,
+    val storyQualityAtGeneration: String? = null,
 )
 
 data class ChatMessageData(

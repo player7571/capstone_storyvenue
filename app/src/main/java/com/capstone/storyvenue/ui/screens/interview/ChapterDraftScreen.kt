@@ -36,20 +36,9 @@ data class ChapterDraft(
     val chapterNumber: Int,
     val chapterType: String,
     val title: String,
-    val content: String
+    val content: String,
+    val storyQualityAtGeneration: String? = null,
 )
-
-private val chapterTypes = listOf("childhood", "youth", "career", "love", "reflection")
-
-private fun normalizeChapterType(chapterType: String): String {
-    val normalized = chapterType.trim().lowercase()
-    return if (normalized in chapterTypes) normalized else "childhood"
-}
-
-private fun chapterNumberFromType(chapterType: String): Int {
-    val index = chapterTypes.indexOf(normalizeChapterType(chapterType))
-    return if (index >= 0) index + 1 else 1
-}
 
 /**
  * 서버에서 챕터 초안을 가져옵니다.
@@ -60,7 +49,9 @@ private fun chapterNumberFromType(chapterType: String): Int {
  */
 suspend fun fetchChapterDraft(
     sessionId: String,
-    chapterType: String,
+    questionNo: Int?,
+    chapterType: String?,
+    allowBasic: Boolean,
     token: String,
 ): Result<ChapterDraft> = withContext(Dispatchers.IO) {
     if (sessionId.isBlank()) {
@@ -71,21 +62,21 @@ suspend fun fetchChapterDraft(
     }
 
     return@withContext try {
-        val normalizedType = normalizeChapterType(chapterType)
         val result = ApiService.generateChapter(
             token = token,
             sessionId = sessionId,
-            chapterType = normalizedType,
+            questionNo = questionNo,
+            chapterType = chapterType,
+            allowBasic = allowBasic,
         )
         result.map { chapter ->
-            val resolvedType = normalizeChapterType(
-                chapter.chapterType.ifBlank { normalizedType }
-            )
+            val resolvedQuestionNo = chapter.sourceQuestionNo ?: questionNo ?: 1
             ChapterDraft(
-                chapterNumber = chapterNumberFromType(resolvedType),
-                chapterType = resolvedType,
-                title = chapter.title.ifBlank { "챕터 ${chapterNumberFromType(resolvedType)}" },
+                chapterNumber = resolvedQuestionNo,
+                chapterType = chapter.chapterType.ifBlank { chapterType.orEmpty() },
+                title = chapter.title.ifBlank { "이야기 $resolvedQuestionNo" },
                 content = chapter.content,
+                storyQualityAtGeneration = chapter.storyQualityAtGeneration,
             )
         }
     } catch (e: Exception) {
@@ -123,7 +114,9 @@ private fun dummyChapter(number: Int) = ChapterDraft(
 @Composable
 fun ChapterDraftScreen(
     sessionId: String     = "",
-    chapterType: String   = "childhood",
+    questionNo: Int?      = null,
+    chapterType: String?  = null,
+    allowBasic: Boolean   = false,
     onBack: () -> Unit    = {},
     onAddToBook: (String) -> Unit = {}
 ) {
@@ -138,8 +131,8 @@ fun ChapterDraftScreen(
     var errorMsg  by remember { mutableStateOf<String?>(null) }
 
     // 최초 로드
-    LaunchedEffect(sessionId, chapterType) {
-        loadDraft(sessionId, chapterType, token) { result, err ->
+    LaunchedEffect(sessionId, questionNo, chapterType, allowBasic) {
+        loadDraft(sessionId, questionNo, chapterType, allowBasic, token) { result, err ->
             draft     = result
             errorMsg  = err
             isLoading = false
@@ -151,13 +144,13 @@ fun ChapterDraftScreen(
         isLoading = true
         errorMsg  = null
         scope.launch {
-            loadDraft(sessionId, chapterType, token) { result, err ->
+            loadDraft(sessionId, questionNo, chapterType, allowBasic, token) { result, err ->
                 draft     = result
                 errorMsg  = err
                 isLoading = false
             }
         }
-        Log.d("ChapterDraft", "다시 생성 클릭 — sessionId=$sessionId, chapterType=$chapterType")
+        Log.d("ChapterDraft", "다시 생성 클릭 — sessionId=$sessionId, questionNo=$questionNo, chapterType=$chapterType")
     }
 
     // ── UI ──────────────────────────────────────────────────────────────────
@@ -369,11 +362,19 @@ private fun BottomButtons(
 
 private suspend fun loadDraft(
     sessionId: String,
-    chapterType: String,
+    questionNo: Int?,
+    chapterType: String?,
+    allowBasic: Boolean,
     token: String,
     onResult: (ChapterDraft?, String?) -> Unit
 ) {
-    val result = fetchChapterDraft(sessionId, chapterType, token)
+    val result = fetchChapterDraft(
+        sessionId = sessionId,
+        questionNo = questionNo,
+        chapterType = chapterType,
+        allowBasic = allowBasic,
+        token = token,
+    )
     withContext(Dispatchers.Main) {
         if (result.isSuccess) {
             onResult(result.getOrNull(), null)

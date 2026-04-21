@@ -67,6 +67,9 @@ CHAPTER_FOCUS_GUIDE: dict[ChapterType, str] = {
     ).strip(),
 }
 
+MINIMUM_CHAPTER_LENGTH = 600
+RETRY_MINIMUM_LENGTH = 700
+
 
 class ChapterContent(BaseModel):
     title: str = Field(min_length=1)
@@ -122,11 +125,13 @@ def _build_generation_prompt(
         - 본문은 반드시 한국어로 작성합니다.
         - 본문은 1인칭 시점으로 씁니다.
         - 본문은 최소 {minimum_length}자 이상으로 작성합니다.
+        - 현재 질문 답변에 담긴 장면과 감정을 중심으로 씁니다.
+        - 이전 질문 참고 내용이 있더라도 현재 질문을 보조하는 정도로만 사용합니다.
         - 인터뷰에 나온 사실과 감정을 중심으로 장면이 보이듯 자연스럽게 서사화합니다.
         - 가능하면 대화에 등장한 인물, 장소, 시기, 사건을 구체적으로 살립니다.
         - 감정의 변화가 드러나도록 쓰되, 과장된 교훈이나 진부한 문구는 피합니다.
         - 문단은 자연스럽게 3~5개 정도로 나누고, 마지막은 짧은 여운이나 깨달음으로 맺습니다.
-        - 대화에 없는 정보는 과도하게 만들어내지 않습니다.
+        - 답변이 짧거나 정보가 적어도, 없는 사실은 만들지 말고 주어진 정보 안에서만 조심스럽게 씁니다.
         - 인터뷰어의 질문을 반복 요약하지 말고, 화자의 삶과 기억이 중심이 되게 씁니다.
 
         인터뷰 대화:
@@ -151,6 +156,70 @@ def _request_chapter_content(prompt: str) -> ChapterContent:
     return parsed
 
 
+def _build_expansion_prompt(
+    conversation_history: list[dict],
+    chapter_type: ChapterType,
+    user_name: str,
+    minimum_length: int,
+    current_title: str,
+    current_content: str,
+) -> str:
+    tone_guide = CHAPTER_TONE_GUIDE[chapter_type]
+    focus_guide = CHAPTER_FOCUS_GUIDE[chapter_type]
+    transcript = _format_conversation_history(conversation_history)
+    name = user_name.strip() or "사용자"
+
+    return dedent(
+        f"""
+        아래는 {name}의 자서전 챕터 초안입니다.
+        이 초안의 사실관계와 감정선은 유지하면서, 내용이 짧은 부분을 자연스럽게 확장해
+        최소 {minimum_length}자 이상의 완성된 자서전 산문으로 다듬어주세요.
+
+        챕터 유형: {chapter_type}
+        챕터 톤 가이드: {tone_guide}
+        챕터 집중 포인트:
+        {focus_guide}
+
+        확장 규칙:
+        - 제목은 기존 제목을 유지하거나, 더 자연스러우면 비슷한 결로만 다듬습니다.
+        - 본문은 반드시 한국어, 1인칭 시점으로 작성합니다.
+        - 기존 초안에 없는 사실을 새로 만들지 않습니다.
+        - 인터뷰에 나온 장면, 감정, 관계를 더 또렷하게 풀어내며 분량을 늘립니다.
+        - 현재 질문 답변을 중심으로 쓰고, 참고 정보는 보조적으로만 사용합니다.
+        - 문단은 자연스럽게 3~5개 정도로 유지합니다.
+        - 마지막은 짧은 여운이나 깨달음으로 마무리합니다.
+
+        현재 초안 제목:
+        {current_title}
+
+        현재 초안 본문:
+        {current_content}
+
+        인터뷰 대화:
+        {transcript}
+        """
+    ).strip()
+
+
+def _expand_short_chapter_content(
+    conversation_history: list[dict],
+    chapter_type: ChapterType,
+    user_name: str,
+    minimum_length: int,
+    current_title: str,
+    current_content: str,
+) -> ChapterContent:
+    prompt = _build_expansion_prompt(
+        conversation_history=conversation_history,
+        chapter_type=chapter_type,
+        user_name=user_name,
+        minimum_length=minimum_length,
+        current_title=current_title,
+        current_content=current_content,
+    )
+    return _request_chapter_content(prompt)
+
+
 def generate_chapter_content(
     conversation_history: list[dict],
     chapter_type: ChapterType,
@@ -160,7 +229,9 @@ def generate_chapter_content(
         allowed = ", ".join(CHAPTER_TONE_GUIDE)
         raise ValueError(f"chapter_type은 다음 중 하나여야 합니다: {allowed}")
 
-    minimum_length = 600
+    minimum_length = MINIMUM_CHAPTER_LENGTH
+    best_title = ""
+    best_content = ""
 
     for _ in range(2):
         prompt = _build_generation_prompt(
@@ -173,12 +244,39 @@ def generate_chapter_content(
         title = chapter.title.strip()
         content = chapter.content.strip()
 
+        if len(content) > len(best_content):
+            best_title = title
+            best_content = content
+
         if title and len(content) >= minimum_length:
             return {
                 "title": title,
                 "content": content,
             }
 
-        minimum_length = 700
+        minimum_length = RETRY_MINIMUM_LENGTH
+
+    if best_title and best_content:
+        for expansion_minimum in (MINIMUM_CHAPTER_LENGTH, RETRY_MINIMUM_LENGTH):
+            expanded = _expand_short_chapter_content(
+                conversation_history=conversation_history,
+                chapter_type=chapter_type,
+                user_name=user_name,
+                minimum_length=expansion_minimum,
+                current_title=best_title,
+                current_content=best_content,
+            )
+            title = expanded.title.strip()
+            content = expanded.content.strip()
+
+            if len(content) > len(best_content):
+                best_title = title
+                best_content = content
+
+            if title and len(content) >= MINIMUM_CHAPTER_LENGTH:
+                return {
+                    "title": title,
+                    "content": content,
+                }
 
     raise RuntimeError("생성된 챕터가 길이 조건을 충족하지 못했습니다.")

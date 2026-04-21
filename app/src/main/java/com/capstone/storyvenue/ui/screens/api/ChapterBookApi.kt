@@ -2,20 +2,30 @@ package com.capstone.storyvenue.ui.screens
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.InterruptedIOException
+import java.net.SocketTimeoutException
 
 object ChapterBookApi {
     fun generateChapter(
         token: String,
         sessionId: String,
-        chapterType: String,
+        questionNo: Int? = null,
+        chapterType: String? = null,
+        allowBasic: Boolean = false,
     ): Result<GeneratedChapterData> {
         return try {
             val payload = JSONObject().apply {
                 put("session_id", sessionId)
-                put("chapter_type", chapterType)
+                if (questionNo != null) {
+                    put("question_no", questionNo)
+                }
+                if (!chapterType.isNullOrBlank()) {
+                    put("chapter_type", chapterType)
+                }
+                put("allow_basic", allowBasic)
             }.toString()
 
-            val response = apiClient.newCall(
+            val response = apiChapterClient.newCall(
                 authPost("$API_BASE_URL/chapters/generate", token, payload)
             ).execute()
             val body = response.body?.string() ?: ""
@@ -27,12 +37,18 @@ object ChapterBookApi {
                         sessionId = json.optString("session_id", sessionId),
                         title = json.optString("title", ""),
                         content = json.optString("content", ""),
-                        chapterType = json.optString("chapter_type", chapterType),
+                        chapterType = json.optString("chapter_type", chapterType.orEmpty()),
+                        sourceQuestionNo = if (json.has("source_question_no") && !json.isNull("source_question_no")) json.optInt("source_question_no") else null,
+                        storyQualityAtGeneration = json.optCleanString("story_quality_at_generation").ifBlank { null },
                     )
                 )
             } else {
                 Result.failure(Exception(parseErrorMessage(body, "챕터 생성 실패")))
             }
+        } catch (_: SocketTimeoutException) {
+            Result.failure(Exception("이야기 생성 시간이 길어지고 있어요. 다시 시도해주세요."))
+        } catch (_: InterruptedIOException) {
+            Result.failure(Exception("이야기 생성 시간이 길어지고 있어요. 다시 시도해주세요."))
         } catch (e: Exception) {
             Result.failure(e)
         }

@@ -10,9 +10,11 @@ from app.api.schemas.chapters import (
 )
 from app.db.supabase import get_supabase
 from app.services.interview import (
-    build_question_answer_conversation_history,
     derive_voice_interview_state_from_session_messages,
-    is_voice_interview_state_message,
+    get_interview_question,
+    get_question_answers,
+    get_question_story_quality,
+    load_question_state_from_store,
     load_voice_interview_state_from_store,
 )
 from app.services import generate_chapter_content
@@ -57,16 +59,21 @@ def _get_chapter_or_404(chapter_id: UUID, user_id: str) -> dict:
     return result.data
 
 
-def _load_conversation_history(session_id: UUID) -> list[dict[str, str]]:
+def _load_legacy_conversation_history(session_id: UUID) -> list[dict[str, str]]:
     try:
         state = load_voice_interview_state_from_store(session_id)
     except Exception:
         state = None
 
     if state is not None:
-        question_answer_history = build_question_answer_conversation_history(state)
-        if question_answer_history:
-            return question_answer_history
+        history: list[dict[str, str]] = []
+        for question_no in range(1, 11):
+            answers = get_question_answers(state, question_no)
+            if not answers:
+                continue
+            history.append({"role": "user", "content": "\n".join(answers)})
+        if history:
+            return history
 
     result = (
         get_supabase()
@@ -79,19 +86,86 @@ def _load_conversation_history(session_id: UUID) -> list[dict[str, str]]:
 
     rows = result.data or []
     legacy_state = derive_voice_interview_state_from_session_messages(rows)
-    question_answer_history = build_question_answer_conversation_history(legacy_state)
-    if question_answer_history:
-        return question_answer_history
+    history_from_state: list[dict[str, str]] = []
+    for question_no in range(1, 11):
+        answers = get_question_answers(legacy_state, question_no)
+        if not answers:
+            continue
+        history_from_state.append({"role": "user", "content": "\n".join(answers)})
+    if history_from_state:
+        return history_from_state
 
     history: list[dict[str, str]] = []
     for row in rows:
         content = str(row.get("content", "")).strip()
         role = str(row.get("role", "")).strip().lower()
-        if role != "user" or not content or is_voice_interview_state_message(content):
+        if role != "user" or not content:
             continue
         history.append({"role": "user", "content": content})
 
     return history
+
+
+def _load_voice_question_story_context(
+    session_id: UUID,
+    question_no: int,
+) -> tuple[list[dict[str, str]], str, str]:
+    try:
+        state = load_voice_interview_state_from_store(session_id)
+    except Exception:
+        state = None
+
+    if state is None:
+        result = (
+            get_supabase()
+            .table("session_messages")
+            .select("role, content")
+            .eq("session_id", str(session_id))
+            .order("created_at", desc=False)
+            .execute()
+        )
+        state = derive_voice_interview_state_from_session_messages(result.data or [])
+
+    current_answers = get_question_answers(state, question_no)
+    if not current_answers:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="이 질문에는 아직 사용자 답변이 없습니다.",
+        )
+
+    question = get_interview_question(question_no)
+    current_answer_text = "\n".join(current_answers).strip()
+    history: list[dict[str, str]] = []
+
+    if question_no > 1:
+        previous_answers = get_question_answers(state, question_no - 1)
+        if previous_answers:
+            previous_question = get_interview_question(question_no - 1)
+            history.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "[이전 질문 참고]\n"
+                        f"질문: {previous_question.main_question}\n"
+                        f"답변: {' '.join(previous_answers)}"
+                    ),
+                }
+            )
+
+    history.append(
+        {
+            "role": "user",
+            "content": (
+                "[현재 질문 답변]\n"
+                f"질문: {question.main_question}\n"
+                f"힌트: {question.hint}\n"
+                f"답변: {current_answer_text}"
+            ),
+        }
+    )
+
+    story_quality = get_question_story_quality(state, question_no)
+    return history, current_answer_text, story_quality
 
 
 def _get_user_name(user_id: str) -> str:
@@ -122,18 +196,60 @@ async def generate_chapter(
     body: ChapterGenerateRequest,
     user_id: str = Depends(get_current_user_id),
 ):
-    _get_session_or_404(body.session_id, user_id)
-    conversation_history = _load_conversation_history(body.session_id)
-    if not conversation_history:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="세션에 사용자 답변 기록이 없습니다.",
+    session = _get_session_or_404(body.session_id, user_id)
+    session_type = str(session.get("session_type") or "voice").strip().lower()
+
+    if session_type == "photo":
+        conversation_history = _load_legacy_conversation_history(body.session_id)
+        if not conversation_history:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="세션에 사용자 답변 기록이 없습니다.",
+            )
+        chapter_type = body.chapter_type or "reflection"
+        source_question_no = None
+        answer_snapshot = "\n".join(
+            str(message.get("content", "")).strip()
+            for message in conversation_history
+            if str(message.get("content", "")).strip()
+        ).strip()
+        story_quality = "ready"
+    else:
+        if body.question_no is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="질문 번호가 필요합니다.",
+            )
+        question = get_interview_question(body.question_no)
+        chapter_type = question.chapter_type
+        conversation_history, answer_snapshot, computed_story_quality = _load_voice_question_story_context(
+            body.session_id,
+            body.question_no,
         )
+        try:
+            question_state = load_question_state_from_store(body.session_id, body.question_no) or {}
+        except Exception:
+            question_state = {}
+        story_quality = (
+            str(question_state.get("story_quality") or "").strip().lower()
+            or computed_story_quality
+        )
+        if story_quality == "none":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="이 질문에 답변이 있어야 이야기를 만들 수 있어요.",
+            )
+        if story_quality == "basic" and not body.allow_basic:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="답변이 조금 짧아요. 지금 생성할지 한 번 더 이야기할지 선택해주세요.",
+            )
+        source_question_no = body.question_no
 
     try:
         generated = generate_chapter_content(
             conversation_history=conversation_history,
-            chapter_type=body.chapter_type,
+            chapter_type=chapter_type,
             user_name=_get_user_name(user_id),
         )
     except ValueError as exc:
@@ -148,26 +264,49 @@ async def generate_chapter(
         ) from exc
 
     try:
-        created = (
-            get_supabase()
-            .table("chapter_drafts")
-            .insert(
-                {
-                    "user_id": user_id,
-                    "session_id": str(body.session_id),
-                    "title": generated["title"],
-                    "content": generated["content"],
-                    "chapter_type": body.chapter_type,
-                    "version_no": 1,
-                }
-            )
-            .execute()
-        )
+        payload = {
+            "user_id": user_id,
+            "session_id": str(body.session_id),
+            "title": generated["title"],
+            "content": generated["content"],
+            "chapter_type": chapter_type,
+            "version_no": 1,
+        }
+        if source_question_no is not None:
+            payload["source_question_no"] = source_question_no
+            payload["answer_snapshot"] = answer_snapshot
+            payload["story_quality_at_generation"] = story_quality
+
+        try:
+            created = get_supabase().table("chapter_drafts").insert(payload).execute()
+        except Exception as exc:
+            if source_question_no is None or not any(
+                key in str(exc)
+                for key in ("source_question_no", "answer_snapshot", "story_quality_at_generation")
+            ):
+                raise
+            legacy_payload = {
+                "user_id": user_id,
+                "session_id": str(body.session_id),
+                "title": generated["title"],
+                "content": generated["content"],
+                "chapter_type": chapter_type,
+                "version_no": 1,
+            }
+            created = get_supabase().table("chapter_drafts").insert(legacy_payload).execute()
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"생성된 챕터 저장 중 오류가 발생했습니다: {exc}",
         ) from exc
+
+    if source_question_no is not None and created.data:
+        try:
+            from app.services.interview import mark_question_story_generated
+
+            mark_question_story_generated(body.session_id, source_question_no, str(created.data[0]["id"]))
+        except Exception:
+            pass
 
     return ChapterResponse(**created.data[0])
 
