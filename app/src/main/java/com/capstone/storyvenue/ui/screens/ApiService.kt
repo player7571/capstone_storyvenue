@@ -170,6 +170,31 @@ object ApiService {
         avatarUrl = json.optCleanString("avatar_url").ifBlank { null },
     )
 
+    private fun parseInterviewState(json: JSONObject?): InterviewPromptData? {
+        if (json == null) return null
+        return InterviewPromptData(
+            currentQuestionNo = json.optInt("current_question_no", 1),
+            totalQuestions = json.optInt("total_questions", 10),
+            mainQuestion = json.optString("main_question", ""),
+            questionHint = json.optCleanString("question_hint").ifBlank { null },
+            followUpCount = json.optInt("follow_up_count", 0),
+            questionStatus = json.optString("question_status", "main"),
+            progressPercent = json.optInt("progress_percent", 0),
+            isInterviewComplete = json.optBoolean("is_interview_complete", false),
+        )
+    }
+
+    private fun parseVoiceTurnData(json: JSONObject): VoiceTurnData {
+        val audioUrl = json.optCleanString("audio_url")
+        return VoiceTurnData(
+            userText = json.optString("user_text", ""),
+            assistantText = json.optString("assistant_text", ""),
+            audioUrl = audioUrl.takeIf { it.isNotBlank() }?.let { toAbsoluteUrl(it) },
+            decision = json.optCleanString("decision").ifBlank { null },
+            interviewState = parseInterviewState(json.optJSONObject("interview_state")),
+        )
+    }
+
     fun getProfile(token: String): Result<ProfileData> {
         return try {
             val response = client.newCall(authGet("$BASE_URL/users/me", token)).execute()
@@ -275,6 +300,7 @@ object ApiService {
                         theme = json.optCleanString("theme"),
                         status = json.optCleanString("status"),
                         createdAt = json.optString("created_at", ""),
+                        interviewState = parseInterviewState(json.optJSONObject("interview_state")),
                     )
                 )
             } else {
@@ -387,10 +413,63 @@ object ApiService {
                         sessionType = json.optCleanString("session_type").ifBlank { "voice" },
                         photoUrl = json.optCleanString("photo_url").ifBlank { null },
                         status = json.optCleanString("status"),
+                        interviewState = parseInterviewState(json.optJSONObject("interview_state")),
                     )
                 )
             } else {
                 Result.failure(Exception(parseErrorMessage(body, "문답 상세 조회 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun goToPreviousQuestion(
+        token: String,
+        sessionId: String,
+    ): Result<InterviewPromptData> {
+        return try {
+            val request = Request.Builder()
+                .url("$BASE_URL/sessions/$sessionId/previous-question")
+                .addHeader("Authorization", "Bearer $token")
+                .post("{}".toRequestBody(JSON_TYPE))
+                .build()
+
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                Result.success(
+                    parseInterviewState(JSONObject(body))
+                        ?: throw Exception("이전 질문 상태를 불러오지 못했습니다.")
+                )
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "이전 질문으로 이동 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun goToNextQuestion(
+        token: String,
+        sessionId: String,
+    ): Result<InterviewPromptData> {
+        return try {
+            val request = Request.Builder()
+                .url("$BASE_URL/sessions/$sessionId/next-question")
+                .addHeader("Authorization", "Bearer $token")
+                .post("{}".toRequestBody(JSON_TYPE))
+                .build()
+
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                Result.success(
+                    parseInterviewState(JSONObject(body))
+                        ?: throw Exception("다음 질문 상태를 불러오지 못했습니다.")
+                )
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "다음 질문으로 이동 실패")))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -443,19 +522,44 @@ object ApiService {
 
             if (response.isSuccessful) {
                 val json = JSONObject(body)
-                val audioUrl = json.optString("audio_url", "")
-                Result.success(
-                    VoiceTurnData(
-                        userText = json.optString("user_text", ""),
-                        assistantText = json.optString("assistant_text", ""),
-                        audioUrl = toAbsoluteUrl(audioUrl),
-                    )
-                )
+                Result.success(parseVoiceTurnData(json))
             } else {
                 Result.failure(Exception(parseErrorMessage(body, "음성 문답 처리 실패")))
             }
         } catch (_: SocketTimeoutException) {
             Result.failure(Exception("분석 시간이 길어지고 있습니다. 네트워크 상태를 확인하고 다시 시도해주세요."))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun voiceTextTurn(
+        token: String,
+        sessionId: String,
+        userText: String,
+    ): Result<VoiceTurnData> {
+        return try {
+            val multipartBody = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("session_id", sessionId)
+                .addFormDataPart("user_text", userText)
+                .build()
+
+            val request = Request.Builder()
+                .url("$BASE_URL/voice/text-turn")
+                .addHeader("Authorization", "Bearer $token")
+                .post(multipartBody)
+                .build()
+
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: ""
+            val json = JSONObject(body)
+
+            if (response.isSuccessful) {
+                Result.success(parseVoiceTurnData(json))
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "텍스트 문답 처리 실패")))
+            }
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -949,12 +1053,15 @@ data class SessionData(
     val theme: String,
     val status: String,
     val createdAt: String,
+    val interviewState: InterviewPromptData? = null,
 )
 
 data class VoiceTurnData(
     val userText: String,
     val assistantText: String,
-    val audioUrl: String,
+    val audioUrl: String? = null,
+    val decision: String? = null,
+    val interviewState: InterviewPromptData? = null,
 )
 
 data class PhotoSessionStartData(
@@ -969,6 +1076,18 @@ data class SessionDetailData(
     val sessionType: String,
     val photoUrl: String?,
     val status: String,
+    val interviewState: InterviewPromptData? = null,
+)
+
+data class InterviewPromptData(
+    val currentQuestionNo: Int,
+    val totalQuestions: Int,
+    val mainQuestion: String,
+    val questionHint: String? = null,
+    val followUpCount: Int = 0,
+    val questionStatus: String = "main",
+    val progressPercent: Int = 0,
+    val isInterviewComplete: Boolean = false,
 )
 
 data class SessionMessageData(

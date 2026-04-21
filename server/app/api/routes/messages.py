@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.api.dependencies.auth import get_current_user_id
 from app.api.schemas.messages import SessionMessageResponse
 from app.db.supabase import get_supabase
+from app.services.adaptive_interview import is_voice_interview_state_message
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
@@ -44,4 +45,10 @@ async def list_messages(
         .execute()
     )
 
-    return [SessionMessageResponse(**row) for row in (result.data or [])]
+    visible_rows = [
+        row
+        for row in (result.data or [])
+        if str(row.get("role") or "").strip().lower() in {"user", "assistant"}
+        and not is_voice_interview_state_message(str(row.get("content") or "").strip())
+    ]
+    return [SessionMessageResponse(**row) for row in visible_rows]
