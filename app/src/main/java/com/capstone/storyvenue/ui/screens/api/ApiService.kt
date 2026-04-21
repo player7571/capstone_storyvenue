@@ -181,6 +181,7 @@ data class VoiceTurnData(
     val assistantText: String,
     val audioUrl: String? = null,
     val decision: String? = null,
+    val reasonCode: String? = null,
     val interviewState: InterviewPromptData? = null,
 )
 

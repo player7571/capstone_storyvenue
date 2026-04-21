@@ -103,6 +103,8 @@ private fun buildVoiceSessionTitle(): String {
     return "음성 문답 ${formatter.format(Date())}"
 }
 
+private const val MIN_RECORDING_SECONDS = 2
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VoiceInterviewScreen(
@@ -183,6 +185,10 @@ fun VoiceInterviewScreen(
             scope.launch { snackbarHostState.showSnackbar("로그인이 필요합니다.") }
             return
         }
+        if (isPlayingAudio) {
+            scope.launch { snackbarHostState.showSnackbar("AI 음성 재생이 끝난 뒤 녹음을 시작해주세요.") }
+            return
+        }
         if (isPreparingSession || isUploadingAudio || isSubmittingText || isNavigatingPrevious || isNavigatingNext || isRecording || isUploadingPhoto) return
 
         val currentSessionId = sessionId
@@ -211,6 +217,14 @@ fun VoiceInterviewScreen(
             return
         }
         viewModel.onRecordingStopped()
+
+        if (recordingSeconds < MIN_RECORDING_SECONDS) {
+            runCatching { file.delete() }
+            scope.launch {
+                snackbarHostState.showSnackbar("답변이 너무 짧아요. 조금 더 천천히 말씀해주세요.")
+            }
+            return
+        }
 
         scope.launch {
             if (!file.exists() || file.length() == 0L) {

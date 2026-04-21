@@ -78,6 +78,7 @@ class VoiceInterviewAssessment(BaseModel):
     reflection_score: int = 0
     transcript_unclear: bool = False
     off_topic: bool = False
+    question_echo: bool = False
 
 
 class FollowUpQuestionResponse(BaseModel):
@@ -99,6 +100,7 @@ class VoiceInterviewTurnOutcome(BaseModel):
     assistant_text: str
     next_state: VoiceInterviewState
     prompt_state: VoiceInterviewPromptState
+    reason_code: str | None = None
     answer_summary: str = ""
     filled_slots: list[SlotName] = Field(default_factory=list)
     missing_slots: list[SlotName] = Field(default_factory=list)

@@ -178,9 +178,13 @@ def _build_transcription_prompt(session_id: UUID, session_type: str) -> str:
     return dedent(
         f"""
         한국어 자서전 인터뷰 음성입니다.
-        사용자는 현재 아래 질문에 답하고 있습니다.
-        현재 질문: {question.main_question}
-        질문 힌트: {question.hint}
+        사용자는 현재 자서전 인터뷰 질문에 답하고 있습니다.
+        현재 질문 주제:
+        - 질문 번호: Q{question.question_no}
+        - 수집하고 싶은 정보: {", ".join(question.target_slots)}
+        - 답변을 돕는 힌트 주제: {question.hint}
+        질문 문장을 추측해서 다시 만들지 말고, 사용자가 실제로 말한 표현만 그대로 전사하세요.
+        말이 불분명하면 질문 문장을 대신 만들어 넣지 마세요.
         인물, 장소, 시기, 사건, 감정 표현을 자연스럽게 유지하며 전사하세요.
         """
     ).strip()
@@ -213,6 +217,21 @@ def _normalize_stt_text(user_text: str) -> str:
     normalized = re.sub(r"\s+", " ", user_text).strip()
     normalized = re.sub(r"\s+([,.!?])", r"\1", normalized)
     return normalized
+
+
+INVALID_USER_TURN_REASON_CODES = {"empty_answer", "transcript_unclear", "question_echo"}
+
+
+def _should_persist_user_turn(decision: str | None, reason_code: str | None) -> bool:
+    if reason_code in INVALID_USER_TURN_REASON_CODES:
+        return False
+    if decision == "move_on" and reason_code == "user_skip_requested":
+        return False
+    return True
+
+
+def _should_echo_user_text(reason_code: str | None) -> bool:
+    return reason_code not in INVALID_USER_TURN_REASON_CODES
 
 
 def _validate_anchor_phrases(anchor_phrases: list[str], source_text: str) -> list[str]:
@@ -335,14 +354,16 @@ def _run_user_turn(
     session_type: str,
     user_text: str,
     source_type: str,
-) -> tuple[str, str | None, InterviewStateResponse | None]:
+) -> tuple[str, str, str | None, str | None, InterviewStateResponse | None]:
     decision = None
+    reason_code = None
     interview_state = None
 
     if session_type == PHOTO_SESSION_TYPE:
         _insert_session_message(session_id, "user", user_text)
         history = _load_conversation_history(session_id)
         assistant_text = generate_photo_follow_up_message(history)
+        display_user_text = user_text
     else:
         current_state = _load_voice_interview_state(session_id)
         if current_state.is_interview_complete:
@@ -351,26 +372,29 @@ def _run_user_turn(
                 detail="이미 모든 질문이 완료되었습니다.",
             )
 
-        _insert_session_message(session_id, "user", user_text)
-        try:
-            append_question_answer_record(
-                session_id=session_id,
-                question_no=current_state.current_question_no,
-                user_text=user_text,
-                source_type=source_type,
-            )
-        except Exception:
-            pass
         outcome = process_voice_interview_answer(current_state, user_text)
         assistant_text = outcome.assistant_text
         decision = outcome.decision
+        reason_code = outcome.reason_code
         interview_state = InterviewStateResponse(**outcome.prompt_state.model_dump())
+        if _should_persist_user_turn(decision, reason_code):
+            _insert_session_message(session_id, "user", user_text)
+            try:
+                append_question_answer_record(
+                    session_id=session_id,
+                    question_no=current_state.current_question_no,
+                    user_text=user_text,
+                    source_type=source_type,
+                )
+            except Exception:
+                pass
         _save_voice_interview_state(session_id, outcome.next_state)
         if outcome.next_state.is_interview_complete:
             _update_voice_session_status(session_id, user_id, VOICE_COMPLETED_STATUS)
+        display_user_text = user_text if _should_echo_user_text(reason_code) else ""
 
     _insert_session_message(session_id, "assistant", assistant_text)
-    return assistant_text, decision, interview_state
+    return display_user_text, assistant_text, decision, reason_code, interview_state
 
 
 @router.post("/turn", response_model=VoiceTurnResponse)
@@ -387,7 +411,7 @@ async def voice_turn(
         prompt_text = _build_transcription_prompt(session_id, session_type)
         raw_user_text = _transcribe_audio(audio_bytes, audio_file.filename, prompt_text)
         user_text = _normalize_stt_text(raw_user_text)
-        assistant_text, decision, interview_state = _run_user_turn(
+        display_user_text, assistant_text, decision, reason_code, interview_state = _run_user_turn(
             session_id=session_id,
             user_id=user_id,
             session_type=session_type,
@@ -405,10 +429,11 @@ async def voice_turn(
         ) from exc
 
     return VoiceTurnResponse(
-        user_text=user_text,
+        user_text=display_user_text,
         assistant_text=assistant_text,
         audio_url=audio_url,
         decision=decision,
+        reason_code=reason_code,
         interview_state=interview_state,
     )
 
@@ -429,7 +454,7 @@ async def voice_text_turn(
 
     try:
         session_type = str(session.get("session_type") or "voice").strip().lower()
-        assistant_text, decision, interview_state = _run_user_turn(
+        display_user_text, assistant_text, decision, reason_code, interview_state = _run_user_turn(
             session_id=session_id,
             user_id=user_id,
             session_type=session_type,
@@ -447,9 +472,10 @@ async def voice_text_turn(
         ) from exc
 
     return VoiceTurnResponse(
-        user_text=cleaned_text,
+        user_text=display_user_text,
         assistant_text=assistant_text,
         audio_url=audio_url,
         decision=decision,
+        reason_code=reason_code,
         interview_state=interview_state,
     )

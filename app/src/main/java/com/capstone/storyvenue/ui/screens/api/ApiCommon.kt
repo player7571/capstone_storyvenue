@@ -122,6 +122,7 @@ internal fun parseVoiceTurnData(json: JSONObject): VoiceTurnData {
         assistantText = json.optString("assistant_text", ""),
         audioUrl = audioUrl.takeIf { it.isNotBlank() }?.let { toAbsoluteUrl(it) },
         decision = json.optCleanString("decision").ifBlank { null },
+        reasonCode = json.optCleanString("reason_code").ifBlank { null },
         interviewState = parseInterviewState(json.optJSONObject("interview_state")),
     )
 }
