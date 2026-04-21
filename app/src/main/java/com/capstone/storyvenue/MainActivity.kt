@@ -12,12 +12,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        val prefs = getSharedPreferences("storyvenue", MODE_PRIVATE)
-        val hasToken = prefs.getString("access_token", null) != null
-
         setContent {
             StoryVenueAppTheme {
-                StoryVenueNavGraph(hasToken = hasToken)
+                StoryVenueNavGraph()
             }
         }
     }

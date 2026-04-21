@@ -16,13 +16,17 @@ from app.api.schemas.sessions import (
 )
 from app.db.supabase import get_supabase
 from app.services import extract_memories
-from app.services.adaptive_interview import (
+from app.services.interview import (
     INTERVIEW_STATE_ROLE,
     build_initial_voice_interview_state,
     build_voice_interview_prompt_state,
+    delete_voice_interview_state_from_store,
     derive_voice_interview_state_from_session_messages,
+    initialize_question_state_rows,
     is_voice_interview_state_message,
+    load_voice_interview_state_from_store,
     move_voice_interview_question,
+    save_voice_interview_state_to_store,
     serialize_voice_interview_state,
 )
 from app.services.photo_interview import (
@@ -110,11 +114,15 @@ def _insert_session_message(session_id: UUID, role: str, content: str) -> dict:
 
 def _insert_voice_interview_state(session_id: UUID) -> InterviewStateResponse:
     initial_state = build_initial_voice_interview_state()
-    _insert_session_message(
-        session_id,
-        INTERVIEW_STATE_ROLE,
-        serialize_voice_interview_state(initial_state),
-    )
+    try:
+        initialize_question_state_rows(session_id)
+        save_voice_interview_state_to_store(session_id, initial_state)
+    except Exception:
+        _insert_session_message(
+            session_id,
+            INTERVIEW_STATE_ROLE,
+            serialize_voice_interview_state(initial_state),
+        )
     return InterviewStateResponse(**build_voice_interview_prompt_state(initial_state).model_dump())
 
 
@@ -141,6 +149,13 @@ def _load_conversation_history(session_id: UUID) -> list[dict[str, str]]:
 
 
 def _load_voice_interview_state_response(session_id: UUID) -> InterviewStateResponse:
+    try:
+        state = load_voice_interview_state_from_store(session_id)
+        if state is not None:
+            return InterviewStateResponse(**build_voice_interview_prompt_state(state).model_dump())
+    except Exception:
+        pass
+
     rows = (
         get_supabase()
         .table("session_messages")
@@ -166,15 +181,20 @@ def _move_voice_session_question(
     user_id: str,
     direction: str,
 ) -> InterviewStateResponse:
-    rows = (
-        get_supabase()
-        .table("session_messages")
-        .select("role, content")
-        .eq("session_id", str(session_id))
-        .order("created_at", desc=False)
-        .execute()
-    )
-    current_state = derive_voice_interview_state_from_session_messages(rows.data or [])
+    try:
+        current_state = load_voice_interview_state_from_store(session_id)
+    except Exception:
+        current_state = None
+    if current_state is None:
+        rows = (
+            get_supabase()
+            .table("session_messages")
+            .select("role, content")
+            .eq("session_id", str(session_id))
+            .order("created_at", desc=False)
+            .execute()
+        )
+        current_state = derive_voice_interview_state_from_session_messages(rows.data or [])
     next_state = move_voice_interview_question(current_state, direction=direction)
     if next_state is None:
         raise HTTPException(
@@ -182,11 +202,14 @@ def _move_voice_session_question(
             detail="더 이상 이동할 수 없습니다.",
         )
 
-    _insert_session_message(
-        session_id,
-        INTERVIEW_STATE_ROLE,
-        serialize_voice_interview_state(next_state),
-    )
+    try:
+        save_voice_interview_state_to_store(session_id, next_state)
+    except Exception:
+        _insert_session_message(
+            session_id,
+            INTERVIEW_STATE_ROLE,
+            serialize_voice_interview_state(next_state),
+        )
     status_value = PHOTO_COMPLETED_STATUS if next_state.is_interview_complete else "in_progress"
     (
         get_supabase()
@@ -516,6 +539,10 @@ async def delete_session(
         sb.table("user_memories").delete().eq("user_id", user_id).eq(
             "session_id", str(session_id)
         ).execute()
+        try:
+            delete_voice_interview_state_from_store(session_id)
+        except Exception:
+            pass
         _delete_generated_audio_files(session_id)
 
         updated = (

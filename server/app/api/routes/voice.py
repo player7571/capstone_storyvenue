@@ -2,6 +2,7 @@ from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 import re
+from textwrap import dedent
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -13,13 +14,20 @@ from app.api.schemas.sessions import InterviewStateResponse
 from app.api.schemas.voice import VoiceTurnResponse
 from app.core.config import get_settings
 from app.db.supabase import get_supabase
-from app.services.adaptive_interview import (
+from app.services.interview import (
+    append_question_answer_record,
     INTERVIEW_STATE_ROLE,
     derive_voice_interview_state_from_session_messages,
+    load_voice_interview_state_from_store,
     is_voice_interview_state_message,
-    process_voice_interview_answer,
+    save_voice_interview_state_to_store,
     serialize_voice_interview_state,
 )
+from app.services.adaptive_interview import (
+    get_interview_question,
+    process_voice_interview_answer,
+)
+from app.services.photo_interview import generate_photo_follow_up_message
 
 router = APIRouter(prefix="/voice", tags=["voice"])
 
@@ -83,6 +91,13 @@ def _insert_session_message(session_id: UUID, role: str, content: str) -> None:
 
 
 def _load_voice_interview_state(session_id: UUID):
+    try:
+        stored = load_voice_interview_state_from_store(session_id)
+        if stored is not None:
+            return stored
+    except Exception:
+        pass
+
     result = (
         get_supabase()
         .table("session_messages")
@@ -95,11 +110,14 @@ def _load_voice_interview_state(session_id: UUID):
 
 
 def _save_voice_interview_state(session_id: UUID, state) -> None:
-    _insert_session_message(
-        session_id,
-        INTERVIEW_STATE_ROLE,
-        serialize_voice_interview_state(state),
-    )
+    try:
+        save_voice_interview_state_to_store(session_id, state)
+    except Exception:
+        _insert_session_message(
+            session_id,
+            INTERVIEW_STATE_ROLE,
+            serialize_voice_interview_state(state),
+        )
 
 
 def _update_voice_session_status(session_id: UUID, user_id: str, status_value: str) -> None:
@@ -145,12 +163,43 @@ def _build_audio_buffer(audio_bytes: bytes, filename: str | None) -> BytesIO:
     return buffer
 
 
-def _transcribe_audio(audio_bytes: bytes, filename: str | None) -> str:
-    transcription = _get_openai_client().audio.transcriptions.create(
-        model="gpt-4o-transcribe",
-        language="ko",
-        file=_build_audio_buffer(audio_bytes, filename),
-    )
+def _build_transcription_prompt(session_id: UUID, session_type: str) -> str:
+    if session_type == PHOTO_SESSION_TYPE:
+        return dedent(
+            """
+            한국어 자서전 사진 인터뷰 음성입니다.
+            사진을 보며 떠오른 기억, 사람, 장소, 감정을 자연스럽게 유지해 전사하세요.
+            짧은 답변이라도 사용자의 실제 표현을 우선해 적어주세요.
+            """
+        ).strip()
+
+    state = _load_voice_interview_state(session_id)
+    question = get_interview_question(state.current_question_no)
+    return dedent(
+        f"""
+        한국어 자서전 인터뷰 음성입니다.
+        사용자는 현재 아래 질문에 답하고 있습니다.
+        현재 질문: {question.main_question}
+        질문 힌트: {question.hint}
+        인물, 장소, 시기, 사건, 감정 표현을 자연스럽게 유지하며 전사하세요.
+        """
+    ).strip()
+
+
+def _transcribe_audio(
+    audio_bytes: bytes,
+    filename: str | None,
+    prompt_text: str | None = None,
+) -> str:
+    request_kwargs = {
+        "model": "gpt-4o-transcribe",
+        "language": "ko",
+        "file": _build_audio_buffer(audio_bytes, filename),
+    }
+    if prompt_text:
+        request_kwargs["prompt"] = prompt_text
+
+    transcription = _get_openai_client().audio.transcriptions.create(**request_kwargs)
     user_text = str(getattr(transcription, "text", "")).strip()
     if not user_text:
         raise HTTPException(
@@ -285,6 +334,7 @@ def _run_user_turn(
     user_id: str,
     session_type: str,
     user_text: str,
+    source_type: str,
 ) -> tuple[str, str | None, InterviewStateResponse | None]:
     decision = None
     interview_state = None
@@ -292,7 +342,7 @@ def _run_user_turn(
     if session_type == PHOTO_SESSION_TYPE:
         _insert_session_message(session_id, "user", user_text)
         history = _load_conversation_history(session_id)
-        assistant_text = _generate_assistant_reply(history)
+        assistant_text = generate_photo_follow_up_message(history)
     else:
         current_state = _load_voice_interview_state(session_id)
         if current_state.is_interview_complete:
@@ -302,6 +352,15 @@ def _run_user_turn(
             )
 
         _insert_session_message(session_id, "user", user_text)
+        try:
+            append_question_answer_record(
+                session_id=session_id,
+                question_no=current_state.current_question_no,
+                user_text=user_text,
+                source_type=source_type,
+            )
+        except Exception:
+            pass
         outcome = process_voice_interview_answer(current_state, user_text)
         assistant_text = outcome.assistant_text
         decision = outcome.decision
@@ -325,13 +384,15 @@ async def voice_turn(
     try:
         session_type = str(session.get("session_type") or "voice").strip().lower()
         audio_bytes = await audio_file.read()
-        raw_user_text = _transcribe_audio(audio_bytes, audio_file.filename)
+        prompt_text = _build_transcription_prompt(session_id, session_type)
+        raw_user_text = _transcribe_audio(audio_bytes, audio_file.filename, prompt_text)
         user_text = _normalize_stt_text(raw_user_text)
         assistant_text, decision, interview_state = _run_user_turn(
             session_id=session_id,
             user_id=user_id,
             session_type=session_type,
             user_text=user_text,
+            source_type="voice",
         )
         tts_audio = _synthesize_tts(assistant_text)
         audio_url = _save_tts_file(session_id, tts_audio)
@@ -373,6 +434,7 @@ async def voice_text_turn(
             user_id=user_id,
             session_type=session_type,
             user_text=cleaned_text,
+            source_type="text",
         )
         tts_audio = _synthesize_tts(assistant_text)
         audio_url = _save_tts_file(session_id, tts_audio)

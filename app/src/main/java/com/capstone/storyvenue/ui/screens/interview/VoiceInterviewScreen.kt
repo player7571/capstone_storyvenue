@@ -4,8 +4,6 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
-import android.media.MediaPlayer
-import android.media.MediaRecorder
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -46,6 +44,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,18 +65,18 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.capstone.storyvenue.ui.theme.SBAggroFamily
 import com.capstone.storyvenue.ui.theme.StoryVenueColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private fun defaultVoiceInterviewPrompt() = InterviewPromptData(
+fun defaultVoiceInterviewPrompt() = InterviewPromptData(
     currentQuestionNo = 1,
     totalQuestions = 10,
     mainQuestion = "어린 시절은 어떠했나요?",
@@ -114,41 +113,30 @@ fun VoiceInterviewScreen(
     val scope = rememberCoroutineScope()
     val prefs = context.getSharedPreferences("storyvenue", Context.MODE_PRIVATE)
     val token = prefs.getString("access_token", "") ?: ""
+    val viewModel: VoiceInterviewViewModel = viewModel()
+    val uiState by viewModel.uiState.collectAsState()
 
-    var sessionId by remember { mutableStateOf(initialSessionId?.takeIf { it.isNotBlank() }) }
-    var sessionType by remember { mutableStateOf("voice") }
-    var photoUrl by remember { mutableStateOf<String?>(null) }
+    val sessionId = uiState.sessionId
+    val sessionType = uiState.sessionType
+    val photoUrl = uiState.photoUrl
     var photoBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
-    var userText by remember { mutableStateOf("") }
-    var interviewPrompt by remember {
-        mutableStateOf(
-            if (initialSessionId.isNullOrBlank()) defaultVoiceInterviewPrompt() else null
-        )
-    }
-    var assistantText by remember {
-        mutableStateOf(
-            if (initialSessionId.isNullOrBlank())
-                "마이크 버튼을 눌러 음성으로 시작하거나, 사진을 첨부해 대화를 시작하세요."
-            else
-                "문답을 불러오고 있어요."
-        )
-    }
-    var latestAudioUrl by remember { mutableStateOf<String?>(null) }
-    var lastRecordedFileName by remember { mutableStateOf("") }
-    var recordingSeconds by remember { mutableStateOf(0) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val userText = uiState.userText
+    val interviewPrompt = uiState.interviewPrompt
+    val assistantText = uiState.assistantText
+    val latestAudioUrl = uiState.latestAudioUrl
+    val lastRecordedFileName = uiState.lastRecordedFileName
+    val recordingSeconds = uiState.recordingSeconds
     val snackbarHostState = remember { SnackbarHostState() }
-    var isPreparingSession by remember { mutableStateOf(!initialSessionId.isNullOrBlank()) }
-    var isUploadingPhoto by remember { mutableStateOf(false) }
-    var isRecording by remember { mutableStateOf(false) }
-    var isUploadingAudio by remember { mutableStateOf(false) }
-    var isSubmittingText by remember { mutableStateOf(false) }
-    var isNavigatingPrevious by remember { mutableStateOf(false) }
-    var isNavigatingNext by remember { mutableStateOf(false) }
-    var isPlayingAudio by remember { mutableStateOf(false) }
-    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
-    var mediaRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
-    var recordingFilePath by remember { mutableStateOf<String?>(null) }
+    val isPreparingSession = uiState.isPreparingSession
+    val isUploadingPhoto = uiState.isUploadingPhoto
+    val isRecording = uiState.isRecording
+    val isUploadingAudio = uiState.isUploadingAudio
+    val isSubmittingText = uiState.isSubmittingText
+    val isNavigatingPrevious = uiState.isNavigatingPrevious
+    val isNavigatingNext = uiState.isNavigatingNext
+    val isPlayingAudio = uiState.isPlayingAudio
+    val recorderController = remember { AudioRecorderController() }
+    val playerController = remember { AudioPlayerController() }
 
     fun loadPhotoThumbnail(url: String) {
         scope.launch {
@@ -161,92 +149,36 @@ fun VoiceInterviewScreen(
         }
     }
 
-    fun stopAndReleasePlayer() {
-        mediaPlayer?.runCatching { stop() }
-        mediaPlayer?.release()
-        mediaPlayer = null
-        isPlayingAudio = false
-    }
-
-    fun stopAndReleaseRecorder(deleteTempFile: Boolean) {
-        mediaRecorder?.runCatching { stop() }
-        mediaRecorder?.release()
-        mediaRecorder = null
-        isRecording = false
-
-        if (deleteTempFile) {
-            recordingFilePath?.let { path ->
-                runCatching { File(path).delete() }
-            }
-        }
-        recordingFilePath = null
-    }
-
     fun playAssistantAudio(url: String) {
-        stopAndReleasePlayer()
-        try {
-            val player = MediaPlayer()
-            mediaPlayer = player
-            player.setDataSource(url)
-            player.setOnPreparedListener {
-                isPlayingAudio = true
-                it.start()
-            }
-            player.setOnCompletionListener {
-                isPlayingAudio = false
-                it.release()
-                mediaPlayer = null
-            }
-            player.setOnErrorListener { mp, _, _ ->
-                mp.release()
-                mediaPlayer = null
-                isPlayingAudio = false
-                errorMessage = "AI 음성 재생 중 오류가 발생했습니다."
-                true
-            }
-            player.prepareAsync()
-        } catch (_: Exception) {
-            errorMessage = "AI 음성 재생에 실패했습니다."
-        }
-    }
-
-    fun applyVoiceTurnResult(voice: VoiceTurnData) {
-        userText = voice.userText
-        assistantText = voice.assistantText
-        latestAudioUrl = voice.audioUrl
-        voice.interviewState?.let { interviewPrompt = it }
+        playerController.play(
+            url = url,
+            onPrepared = { viewModel.setAudioPlaying(true) },
+            onCompleted = { viewModel.setAudioPlaying(false) },
+            onError = {
+                viewModel.setAudioPlaying(false)
+                scope.launch {
+                    snackbarHostState.showSnackbar("AI 음성 재생에 실패했습니다.")
+                }
+            },
+        )
     }
 
     fun beginRecordingAfterSession(currentSessionId: String) {
-        errorMessage = null
-        val outputDir = File(context.cacheDir, "voice-recordings").apply { mkdirs() }
-        val outputFile = File(outputDir, "recording_${System.currentTimeMillis()}.m4a")
-
-        try {
-            val recorder = MediaRecorder().apply {
-                setAudioSource(MediaRecorder.AudioSource.MIC)
-                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                setAudioEncodingBitRate(128000)
-                setAudioSamplingRate(44100)
-                setOutputFile(outputFile.absolutePath)
-                prepare()
-                start()
+        recorderController.start(context)
+            .onSuccess { file ->
+                viewModel.onRecordingStarted(file.name)
             }
-            mediaRecorder = recorder
-            recordingFilePath = outputFile.absolutePath
-            lastRecordedFileName = outputFile.name
-            recordingSeconds = 0
-            isRecording = true
-        } catch (_: Exception) {
-            stopAndReleaseRecorder(deleteTempFile = true)
-            errorMessage = "녹음을 시작하지 못했습니다. 마이크 권한 및 기기 상태를 확인해주세요."
-        }
+            .onFailure {
+                recorderController.release(deleteTempFile = true)
+                scope.launch {
+                    snackbarHostState.showSnackbar("녹음을 시작하지 못했습니다. 마이크 권한 및 기기 상태를 확인해주세요.")
+                }
+            }
     }
 
     fun startRecording() {
         if (token.isBlank()) {
-            errorMessage = "로그인이 필요합니다."
+            scope.launch { snackbarHostState.showSnackbar("로그인이 필요합니다.") }
             return
         }
         if (isPreparingSession || isUploadingAudio || isSubmittingText || isNavigatingPrevious || isNavigatingNext || isRecording || isUploadingPhoto) return
@@ -259,83 +191,55 @@ fun VoiceInterviewScreen(
 
         // 세션이 아직 없으면 음성 세션을 먼저 생성한 뒤 바로 녹음 시작
         scope.launch {
-            isPreparingSession = true
-            errorMessage = null
             val title = buildVoiceSessionTitle()
-            val result = withContext(Dispatchers.IO) {
-                ApiService.createSession(token = token, title = title, theme = "자서전")
-            }
-            isPreparingSession = false
+            val result = viewModel.ensureVoiceSession(token = token, title = title)
             result.onSuccess { created ->
-                sessionId = created.id
-                sessionType = "voice"
-                interviewPrompt = created.interviewState ?: defaultVoiceInterviewPrompt()
-                assistantText = "질문을 보고 천천히 이야기해주세요."
-                beginRecordingAfterSession(created.id)
-            }.onFailure { e ->
-                errorMessage = e.message ?: "문답 시작에 실패했습니다."
+                beginRecordingAfterSession(created)
             }
         }
     }
 
     fun stopRecordingAndUpload() {
         val currentSessionId = sessionId
-        val path = recordingFilePath
-        if (currentSessionId.isNullOrBlank() || path.isNullOrBlank()) {
-            stopAndReleaseRecorder(deleteTempFile = true)
-            errorMessage = "녹음 파일을 찾을 수 없습니다."
+        val file = recorderController.stop(deleteTempFile = false)
+        if (currentSessionId.isNullOrBlank() || file == null) {
+            recorderController.release(deleteTempFile = true)
+            viewModel.onRecordingStopped()
+            scope.launch { snackbarHostState.showSnackbar("녹음 파일을 찾을 수 없습니다.") }
             return
         }
-
-        mediaRecorder?.runCatching { stop() }
-        mediaRecorder?.release()
-        mediaRecorder = null
-        isRecording = false
-        recordingFilePath = null
+        viewModel.onRecordingStopped()
 
         scope.launch {
-            isUploadingAudio = true
-            errorMessage = null
-
-            val result = withContext(Dispatchers.IO) {
-                val file = File(path)
-                if (!file.exists() || file.length() == 0L) {
-                    Result.failure(Exception("녹음된 파일이 비어 있습니다. 다시 시도해주세요."))
-                } else {
-                    val bytes = file.readBytes()
-                    val apiResult = ApiService.voiceTurn(
-                        token = token,
-                        sessionId = currentSessionId,
-                        audioBytes = bytes,
-                        fileName = file.name,
-                        contentType = "audio/m4a",
-                    )
-                    runCatching { file.delete() }
-                    apiResult
-                }
+            if (!file.exists() || file.length() == 0L) {
+                runCatching { file.delete() }
+                snackbarHostState.showSnackbar("녹음된 파일이 비어 있습니다. 다시 시도해주세요.")
+                return@launch
             }
-
-            isUploadingAudio = false
-            result.onSuccess { voice ->
-                applyVoiceTurnResult(voice)
-            }.onFailure { e ->
-                errorMessage = e.message ?: "음성 문답 처리에 실패했습니다."
-            }
+            val bytes = withContext(Dispatchers.IO) { file.readBytes() }
+            viewModel.submitVoiceTurn(
+                token = token,
+                sessionId = currentSessionId,
+                audioBytes = bytes,
+                fileName = file.name,
+                contentType = "audio/m4a",
+            )
+            runCatching { file.delete() }
         }
     }
 
     fun sendTextTurn(manualText: String) {
         val currentSessionId = sessionId
         if (token.isBlank()) {
-            errorMessage = "로그인이 필요합니다."
+            scope.launch { snackbarHostState.showSnackbar("로그인이 필요합니다.") }
             return
         }
         if (sessionType == "photo") {
-            errorMessage = "사진 문답에서는 이 기능을 사용할 수 없습니다."
+            scope.launch { snackbarHostState.showSnackbar("사진 문답에서는 이 기능을 사용할 수 없습니다.") }
             return
         }
         if (currentSessionId.isNullOrBlank()) {
-            errorMessage = "문답이 아직 시작되지 않았습니다."
+            scope.launch { snackbarHostState.showSnackbar("문답이 아직 시작되지 않았습니다.") }
             return
         }
         if (isPreparingSession || isUploadingAudio || isSubmittingText || isNavigatingPrevious || isNavigatingNext || isUploadingPhoto || isRecording) {
@@ -343,36 +247,26 @@ fun VoiceInterviewScreen(
         }
 
         scope.launch {
-            isSubmittingText = true
-            errorMessage = null
-            val result = withContext(Dispatchers.IO) {
-                ApiService.voiceTextTurn(
-                    token = token,
-                    sessionId = currentSessionId,
-                    userText = manualText,
-                )
-            }
-            isSubmittingText = false
-            result.onSuccess { voice ->
-                applyVoiceTurnResult(voice)
-            }.onFailure { e ->
-                errorMessage = e.message ?: "문답 처리에 실패했습니다."
-            }
+            viewModel.submitTextTurn(
+                token = token,
+                sessionId = currentSessionId,
+                userText = manualText,
+            )
         }
     }
 
     fun goToPreviousQuestion() {
         val currentSessionId = sessionId
         if (token.isBlank()) {
-            errorMessage = "로그인이 필요합니다."
+            scope.launch { snackbarHostState.showSnackbar("로그인이 필요합니다.") }
             return
         }
         if (sessionType == "photo") {
-            errorMessage = "사진 문답에서는 이 기능을 사용할 수 없습니다."
+            scope.launch { snackbarHostState.showSnackbar("사진 문답에서는 이 기능을 사용할 수 없습니다.") }
             return
         }
         if (currentSessionId.isNullOrBlank()) {
-            errorMessage = "문답이 아직 시작되지 않았습니다."
+            scope.launch { snackbarHostState.showSnackbar("문답이 아직 시작되지 않았습니다.") }
             return
         }
         if (isPreparingSession || isUploadingAudio || isSubmittingText || isNavigatingPrevious || isNavigatingNext || isUploadingPhoto || isRecording) {
@@ -380,38 +274,22 @@ fun VoiceInterviewScreen(
         }
 
         scope.launch {
-            isNavigatingPrevious = true
-            errorMessage = null
-            val result = withContext(Dispatchers.IO) {
-                ApiService.goToPreviousQuestion(
-                    token = token,
-                    sessionId = currentSessionId,
-                )
-            }
-            isNavigatingPrevious = false
-            result.onSuccess { prompt ->
-                interviewPrompt = prompt
-                userText = ""
-                latestAudioUrl = null
-                assistantText = "이전 질문으로 돌아왔어요. 천천히 다시 이야기해주세요."
-            }.onFailure { e ->
-                errorMessage = e.message ?: "이전 질문으로 이동하지 못했습니다."
-            }
+            viewModel.goToPreviousQuestion(token = token, sessionId = currentSessionId)
         }
     }
 
     fun goToNextQuestion() {
         val currentSessionId = sessionId
         if (token.isBlank()) {
-            errorMessage = "로그인이 필요합니다."
+            scope.launch { snackbarHostState.showSnackbar("로그인이 필요합니다.") }
             return
         }
         if (sessionType == "photo") {
-            errorMessage = "사진 문답에서는 이 기능을 사용할 수 없습니다."
+            scope.launch { snackbarHostState.showSnackbar("사진 문답에서는 이 기능을 사용할 수 없습니다.") }
             return
         }
         if (currentSessionId.isNullOrBlank()) {
-            errorMessage = "문답이 아직 시작되지 않았습니다."
+            scope.launch { snackbarHostState.showSnackbar("문답이 아직 시작되지 않았습니다.") }
             return
         }
         if (isPreparingSession || isUploadingAudio || isSubmittingText || isNavigatingPrevious || isNavigatingNext || isUploadingPhoto || isRecording) {
@@ -419,79 +297,39 @@ fun VoiceInterviewScreen(
         }
 
         scope.launch {
-            isNavigatingNext = true
-            errorMessage = null
-            val result = withContext(Dispatchers.IO) {
-                ApiService.goToNextQuestion(
-                    token = token,
-                    sessionId = currentSessionId,
-                )
-            }
-            isNavigatingNext = false
-            result.onSuccess { prompt ->
-                interviewPrompt = prompt
-                userText = ""
-                latestAudioUrl = null
-                assistantText = if (prompt.isInterviewComplete) {
-                    "질문이 모두 끝났어요. 이제 이야기를 생성해보세요."
-                } else {
-                    "다음 질문으로 이동했어요. 천천히 이야기해주세요."
-                }
-            }.onFailure { e ->
-                errorMessage = e.message ?: "다음 질문으로 이동하지 못했습니다."
-            }
+            viewModel.goToNextQuestion(token = token, sessionId = currentSessionId)
         }
     }
 
     fun attachPhoto(uri: Uri) {
         if (token.isBlank()) {
-            errorMessage = "로그인이 필요합니다."
+            scope.launch { snackbarHostState.showSnackbar("로그인이 필요합니다.") }
             return
         }
         if (!sessionId.isNullOrBlank()) {
-            errorMessage = "이미 문답이 시작되어 사진을 첨부할 수 없습니다."
+            scope.launch { snackbarHostState.showSnackbar("이미 문답이 시작되어 사진을 첨부할 수 없습니다.") }
             return
         }
         if (isPreparingSession || isUploadingPhoto) return
 
         scope.launch {
-            isUploadingPhoto = true
-            errorMessage = null
-
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    val resolver = context.contentResolver
-                    val mime = resolver.getType(uri) ?: "image/jpeg"
-                    val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
-                        ?: throw Exception("이미지를 읽을 수 없습니다.")
-                    if (bytes.size > 5 * 1024 * 1024) {
-                        throw Exception("이미지 크기는 5MB 이하여야 합니다.")
-                    }
-                    val ext = when {
-                        mime.contains("png") -> "png"
-                        else -> "jpg"
-                    }
-                    ApiService.createPhotoSession(
-                        token = token,
-                        imageBytes = bytes,
-                        contentType = mime,
-                        fileName = "photo_${System.currentTimeMillis()}.$ext",
-                    )
-                }.getOrElse { Result.failure(it) }
-            }
-
-            isUploadingPhoto = false
-            result.onSuccess { started ->
-                sessionId = started.sessionId
-                sessionType = "photo"
-                interviewPrompt = null
-                photoUrl = started.photoUrl.takeIf { it.isNotBlank() }
-                assistantText = started.aiMessage.ifBlank {
-                    "사진을 분석했어요. 마이크 버튼을 눌러 답변을 녹음해주세요."
+            runCatching {
+                val resolver = context.contentResolver
+                val mime = resolver.getType(uri) ?: "image/jpeg"
+                val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: throw Exception("이미지를 읽을 수 없습니다.")
+                if (bytes.size > 5 * 1024 * 1024) {
+                    throw Exception("이미지 크기는 5MB 이하여야 합니다.")
                 }
-                photoUrl?.let { loadPhotoThumbnail(it) }
+                val ext = if (mime.contains("png")) "png" else "jpg"
+                viewModel.attachPhoto(
+                    token = token,
+                    imageBytes = bytes,
+                    contentType = mime,
+                    fileName = "photo_${System.currentTimeMillis()}.$ext",
+                )
             }.onFailure { e ->
-                errorMessage = e.message ?: "사진 올리기에 실패했습니다."
+                snackbarHostState.showSnackbar(e.message ?: "사진 올리기에 실패했습니다.")
             }
         }
     }
@@ -508,81 +346,38 @@ fun VoiceInterviewScreen(
         if (granted) {
             startRecording()
         } else {
-            errorMessage = "실시간 녹음을 위해 마이크 권한이 필요합니다."
+            scope.launch {
+                snackbarHostState.showSnackbar("실시간 녹음을 위해 마이크 권한이 필요합니다.")
+            }
         }
     }
 
+    LaunchedEffect(initialSessionId) {
+        viewModel.resetForInitialSession(initialSessionId)
+    }
+
     LaunchedEffect(token, initialSessionId) {
-        if (token.isBlank()) {
-            isPreparingSession = false
-            errorMessage = "로그인이 필요합니다."
-            return@LaunchedEffect
-        }
-
-        if (initialSessionId.isNullOrBlank()) {
-            // 신규 진입 — 세션은 사용자가 첫 행동(녹음/사진)을 할 때 생성
-            isPreparingSession = false
-            return@LaunchedEffect
-        }
-
-        isPreparingSession = true
-        val result = withContext(Dispatchers.IO) {
-            ApiService.getSessionDetail(token = token, sessionId = initialSessionId)
-        }
-        isPreparingSession = false
-        result.onSuccess { detail ->
-            sessionId = detail.id
-            sessionType = detail.sessionType
-            photoUrl = detail.photoUrl
-            interviewPrompt = if (detail.sessionType == "photo") {
-                null
-            } else {
-                detail.interviewState ?: defaultVoiceInterviewPrompt()
-            }
-            scope.launch {
-                val messagesResult = withContext(Dispatchers.IO) {
-                    ApiService.getSessionMessages(token = token, sessionId = detail.id)
-                }
-                messagesResult.onSuccess { messages ->
-                    messages.lastOrNull { it.role == "assistant" }?.content?.takeIf { it.isNotBlank() }?.let {
-                        assistantText = it
-                    } ?: run {
-                        assistantText = if (detail.sessionType == "photo")
-                            "사진 문답을 이어갈 수 있어요. 마이크 버튼을 눌러 답변을 녹음하세요."
-                        else if (detail.interviewState?.isInterviewComplete == true)
-                            "질문이 모두 끝났어요. 이제 이야기를 생성해보세요."
-                        else
-                            "질문을 보고 천천히 이야기해주세요."
-                    }
-                }.onFailure {
-                    assistantText = if (detail.sessionType == "photo")
-                        "사진 문답을 이어갈 수 있어요. 마이크 버튼을 눌러 답변을 녹음하세요."
-                    else if (detail.interviewState?.isInterviewComplete == true)
-                        "질문이 모두 끝났어요. 이제 이야기를 생성해보세요."
-                    else
-                        "질문을 보고 천천히 이야기해주세요."
-                }
-                detail.photoUrl?.let { loadPhotoThumbnail(it) }
-            }
-        }.onFailure { e ->
-            errorMessage = e.message ?: "문답을 불러오지 못했습니다."
-            assistantText = "문답을 불러오지 못했습니다. 뒤로가기 후 다시 시도해주세요."
-        }
+        viewModel.bootstrap(token, initialSessionId)
     }
 
     LaunchedEffect(isRecording) {
         if (!isRecording) return@LaunchedEffect
         while (isRecording) {
             delay(1000)
-            recordingSeconds += 1
+            viewModel.onRecordingTick()
         }
     }
 
     DisposableEffect(Unit) {
         onDispose {
-            stopAndReleaseRecorder(deleteTempFile = true)
-            stopAndReleasePlayer()
+            recorderController.release(deleteTempFile = true)
+            playerController.stop()
         }
+    }
+
+    LaunchedEffect(uiState.photoUrl) {
+        photoBitmap = null
+        uiState.photoUrl?.let { loadPhotoThumbnail(it) }
     }
 
     val currentPrompt = if (sessionType == "photo") null else (interviewPrompt ?: defaultVoiceInterviewPrompt())
@@ -630,11 +425,10 @@ fun VoiceInterviewScreen(
         !isNavigatingNext &&
         !isRecording
 
-    LaunchedEffect(errorMessage) {
-        val msg = errorMessage
+    LaunchedEffect(uiState.errorMessage) {
+        val msg = viewModel.consumeError()
         if (!msg.isNullOrBlank()) {
             snackbarHostState.showSnackbar(msg)
-            errorMessage = null
         }
     }
 
@@ -974,7 +768,9 @@ fun VoiceInterviewScreen(
                     if (isRecording || isUploadingAudio || isSubmittingText || isNavigatingPrevious || isNavigatingNext || isUploadingPhoto) return@StoryButton
                     val currentSessionId = sessionId
                     if (currentSessionId.isNullOrBlank()) {
-                        errorMessage = "세션이 준비되지 않았습니다. 잠시 후 다시 시도해주세요."
+                        scope.launch {
+                            snackbarHostState.showSnackbar("세션이 준비되지 않았습니다. 잠시 후 다시 시도해주세요.")
+                        }
                     } else {
                         val answeredCount = if (isInterviewComplete) {
                             totalQuestions
@@ -982,7 +778,9 @@ fun VoiceInterviewScreen(
                             (currentProgress - 1).coerceAtLeast(0)
                         }
                         if (answeredCount == 0) {
-                            errorMessage = "최소 1개 이상 답변한 뒤 이야기를 생성할 수 있습니다."
+                            scope.launch {
+                                snackbarHostState.showSnackbar("최소 1개 이상 답변한 뒤 이야기를 생성할 수 있습니다.")
+                            }
                             return@StoryButton
                         }
                         val chapterType = chapterTypeFromAnsweredCount(answeredCount)

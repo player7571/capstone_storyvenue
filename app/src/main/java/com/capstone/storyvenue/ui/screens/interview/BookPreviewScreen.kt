@@ -58,6 +58,7 @@ private fun buildPreview(content: String): String {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BookPreviewScreen(
+    sessionId: String,
     bookTitle: String                  = "나의 이야기",
     onBack: () -> Unit                 = {},
     onAddChapter: () -> Unit           = {},
@@ -81,7 +82,12 @@ fun BookPreviewScreen(
             isLoading = false
             return
         }
-        val result = withContext(Dispatchers.IO) { ApiService.listChapters(token) }
+        if (sessionId.isBlank()) {
+            errorMsg = "문답 정보를 찾을 수 없습니다."
+            isLoading = false
+            return
+        }
+        val result = withContext(Dispatchers.IO) { ApiService.listChapters(token, sessionId) }
         if (result.isSuccess) {
             val drafts = result.getOrNull().orEmpty()
             chapters = drafts
@@ -102,7 +108,7 @@ fun BookPreviewScreen(
         isLoading = false
     }
 
-    LaunchedEffect(Unit) { loadChapters() }
+    LaunchedEffect(sessionId) { loadChapters() }
 
     fun publish() {
         if (isPublishing) return
@@ -442,6 +448,6 @@ private fun ChapterAccordionCard(
 @Composable
 private fun BookPreviewScreenPreview() {
     StoryVenueAppTheme {
-        BookPreviewScreen()
+        BookPreviewScreen(sessionId = "preview-session")
     }
 }

@@ -30,7 +30,7 @@ object Routes {
     const val HOME            = "home"
     const val VOICE_INTERVIEW = "voice_interview?sessionId={sessionId}"
     const val CHAPTER_DRAFT   = "chapter_draft/{sessionId}?chapterType={chapterType}"
-    const val BOOK_PREVIEW    = "book_preview"
+    const val BOOK_PREVIEW    = "book_preview/{sessionId}"
     const val FEED            = "feed"
     const val FEED_DETAIL     = "feed_detail/{postId}"
     const val CHAT_LIST       = "chat_list"
@@ -45,17 +45,16 @@ object Routes {
         if (sessionId.isNullOrBlank()) "voice_interview" else "voice_interview?sessionId=$sessionId"
     fun chapterDraft(sessionId: String, chapterType: String = "childhood") =
         "chapter_draft/$sessionId?chapterType=$chapterType"
+    fun bookPreview(sessionId: String) = "book_preview/$sessionId"
 }
 
 @Composable
 fun StoryVenueNavGraph(
     navController: NavHostController = rememberNavController(),
-    hasToken: Boolean = false,
 ) {
     NavHost(navController = navController, startDestination = Routes.SPLASH) {
         composable(Routes.SPLASH) {
             SplashScreen(
-                hasToken = hasToken,
                 onNavigateToHome = { navController.navigate(Routes.FEED) { popUpTo(Routes.SPLASH) { inclusive = true } } },
                 onNavigateToLogin = { navController.navigate(Routes.LOGIN) { popUpTo(Routes.SPLASH) { inclusive = true } } },
             )
@@ -117,13 +116,22 @@ fun StoryVenueNavGraph(
                 sessionId = sessionId,
                 chapterType = chapterType,
                 onBack = { navController.popBackStack() },
-                onAddToBook = { navController.navigate(Routes.BOOK_PREVIEW) },
+                onAddToBook = { selectedSessionId ->
+                    navController.navigate(Routes.bookPreview(selectedSessionId))
+                },
             )
         }
-        composable(Routes.BOOK_PREVIEW) {
+        composable(
+            route = Routes.BOOK_PREVIEW,
+            arguments = listOf(
+                navArgument("sessionId") { type = NavType.StringType },
+            ),
+        ) { back ->
+            val sessionId = back.arguments?.getString("sessionId") ?: ""
             BookPreviewScreen(
+                sessionId = sessionId,
                 onBack = { navController.popBackStack() },
-                onAddChapter = { navController.navigate(Routes.voiceInterview()) },
+                onAddChapter = { navController.navigate(Routes.voiceInterview(sessionId)) },
                 onPostToFeed = { navController.navigate(Routes.FEED) },
             )
         }

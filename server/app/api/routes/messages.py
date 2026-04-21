@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.api.dependencies.auth import get_current_user_id
 from app.api.schemas.messages import SessionMessageResponse
 from app.db.supabase import get_supabase
-from app.services.adaptive_interview import is_voice_interview_state_message
+from app.services.interview import is_voice_interview_state_message
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
