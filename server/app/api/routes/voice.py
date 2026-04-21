@@ -2,7 +2,6 @@ from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 import re
-from textwrap import dedent
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -23,10 +22,7 @@ from app.services.interview import (
     save_voice_interview_state_to_store,
     serialize_voice_interview_state,
 )
-from app.services.adaptive_interview import (
-    get_interview_question,
-    process_voice_interview_answer,
-)
+from app.services.adaptive_interview import process_voice_interview_answer
 from app.services.photo_interview import generate_photo_follow_up_message
 
 router = APIRouter(prefix="/voice", tags=["voice"])
@@ -163,47 +159,15 @@ def _build_audio_buffer(audio_bytes: bytes, filename: str | None) -> BytesIO:
     return buffer
 
 
-def _build_transcription_prompt(session_id: UUID, session_type: str) -> str:
-    if session_type == PHOTO_SESSION_TYPE:
-        return dedent(
-            """
-            한국어 자서전 사진 인터뷰 음성입니다.
-            사진을 보며 떠오른 기억, 사람, 장소, 감정을 자연스럽게 유지해 전사하세요.
-            짧은 답변이라도 사용자의 실제 표현을 우선해 적어주세요.
-            """
-        ).strip()
-
-    state = _load_voice_interview_state(session_id)
-    question = get_interview_question(state.current_question_no)
-    return dedent(
-        f"""
-        한국어 자서전 인터뷰 음성입니다.
-        사용자는 현재 자서전 인터뷰 질문에 답하고 있습니다.
-        현재 질문 주제:
-        - 질문 번호: Q{question.question_no}
-        - 수집하고 싶은 정보: {", ".join(question.target_slots)}
-        - 답변을 돕는 힌트 주제: {question.hint}
-        질문 문장을 추측해서 다시 만들지 말고, 사용자가 실제로 말한 표현만 그대로 전사하세요.
-        말이 불분명하면 질문 문장을 대신 만들어 넣지 마세요.
-        인물, 장소, 시기, 사건, 감정 표현을 자연스럽게 유지하며 전사하세요.
-        """
-    ).strip()
-
-
 def _transcribe_audio(
     audio_bytes: bytes,
     filename: str | None,
-    prompt_text: str | None = None,
 ) -> str:
-    request_kwargs = {
-        "model": "gpt-4o-transcribe",
-        "language": "ko",
-        "file": _build_audio_buffer(audio_bytes, filename),
-    }
-    if prompt_text:
-        request_kwargs["prompt"] = prompt_text
-
-    transcription = _get_openai_client().audio.transcriptions.create(**request_kwargs)
+    transcription = _get_openai_client().audio.transcriptions.create(
+        model="gpt-4o-transcribe",
+        language="ko",
+        file=_build_audio_buffer(audio_bytes, filename),
+    )
     user_text = str(getattr(transcription, "text", "")).strip()
     if not user_text:
         raise HTTPException(
@@ -408,8 +372,7 @@ async def voice_turn(
     try:
         session_type = str(session.get("session_type") or "voice").strip().lower()
         audio_bytes = await audio_file.read()
-        prompt_text = _build_transcription_prompt(session_id, session_type)
-        raw_user_text = _transcribe_audio(audio_bytes, audio_file.filename, prompt_text)
+        raw_user_text = _transcribe_audio(audio_bytes, audio_file.filename)
         user_text = _normalize_stt_text(raw_user_text)
         display_user_text, assistant_text, decision, reason_code, interview_state = _run_user_turn(
             session_id=session_id,
