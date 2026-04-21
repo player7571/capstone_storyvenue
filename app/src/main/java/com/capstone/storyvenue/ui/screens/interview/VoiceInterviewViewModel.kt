@@ -292,9 +292,13 @@ class VoiceInterviewViewModel : ViewModel() {
     }
 
     private fun applyVoiceTurnResult(voice: VoiceTurnData) {
+        val normalizedUserText = when (voice.reasonCode) {
+            "question_echo", "transcript_unclear", "empty_answer" -> ""
+            else -> voice.userText
+        }
         _uiState.update {
             it.copy(
-                userText = voice.userText,
+                userText = normalizedUserText,
                 assistantText = voice.assistantText,
                 latestAudioUrl = voice.audioUrl,
                 interviewPrompt = voice.interviewState ?: it.interviewPrompt,

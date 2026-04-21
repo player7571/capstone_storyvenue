@@ -128,6 +128,14 @@ def decide_interview_turn(
     required_hits = count_required_slot_hits(question, assessment.filled_slots)
     meaningful_answer = looks_like_meaningful_answer(cleaned_text)
 
+    if assessment.question_echo:
+        return VoiceInterviewDecision(
+            decision="repeat",
+            reason_code="question_echo",
+            total_score=total_score,
+            required_slot_hits=required_hits,
+        )
+
     if assessment.transcript_unclear and not meaningful_answer:
         return VoiceInterviewDecision(
             decision="repeat",

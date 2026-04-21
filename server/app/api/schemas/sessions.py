@@ -18,6 +18,16 @@ class InterviewStateResponse(BaseModel):
     question_status: str
     progress_percent: int
     is_interview_complete: bool = False
+    current_question_has_answer: bool = False
+    current_question_answer_count: int = 0
+    current_question_story_ready: bool = False
+    current_question_story_quality: str = "none"
+    story_target_question_no: int | None = None
+    story_target_has_answer: bool = False
+    story_target_answer_count: int = 0
+    story_target_story_ready: bool = False
+    story_target_story_quality: str = "none"
+    story_target_is_current_question: bool = True
 
 
 class SessionResponse(BaseModel):

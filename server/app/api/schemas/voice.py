@@ -8,4 +8,5 @@ class VoiceTurnResponse(BaseModel):
     assistant_text: str
     audio_url: str
     decision: str | None = None
+    reason_code: str | None = None
     interview_state: InterviewStateResponse | None = None

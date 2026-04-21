@@ -95,6 +95,31 @@ def _build_follow_up_state(
         last_follow_up_question=decision.follow_up_question,
         collected_answers=updated_current_answers,
         question_answers=next_answers,
+        question_statuses=dict(state.question_statuses),
+        question_story_qualities=dict(state.question_story_qualities),
+        question_bank_version=state.question_bank_version,
+        is_interview_complete=False,
+    )
+    return _build_state_with_metadata(next_state, decision)
+
+
+def _build_passed_current_question_state(
+    state: VoiceInterviewState,
+    user_text: str,
+    decision: VoiceInterviewDecision,
+) -> VoiceInterviewState:
+    next_answers = append_question_answer(state, state.current_question_no, user_text)
+    updated_current_answers = next_answers.get(str(state.current_question_no), [])
+    next_story_qualities = dict(state.question_story_qualities)
+    next_story_qualities[str(state.current_question_no)] = "ready"
+    next_state = VoiceInterviewState(
+        current_question_no=state.current_question_no,
+        follow_up_count=0,
+        last_follow_up_question=None,
+        collected_answers=updated_current_answers,
+        question_answers=next_answers,
+        question_statuses=dict(state.question_statuses),
+        question_story_qualities=next_story_qualities,
         question_bank_version=state.question_bank_version,
         is_interview_complete=False,
     )
@@ -120,6 +145,8 @@ def _build_next_question_state(
             last_follow_up_question=None,
             collected_answers=next_question_answers.get(str(total_questions), []),
             question_answers=next_question_answers,
+            question_statuses=dict(state.question_statuses),
+            question_story_qualities=dict(state.question_story_qualities),
             question_bank_version=state.question_bank_version,
             is_interview_complete=True,
         )
@@ -131,6 +158,8 @@ def _build_next_question_state(
         last_follow_up_question=None,
         collected_answers=next_question_answers.get(str(next_question_no), []),
         question_answers=next_question_answers,
+        question_statuses=dict(state.question_statuses),
+        question_story_qualities=dict(state.question_story_qualities),
         question_bank_version=state.question_bank_version,
         is_interview_complete=False,
     )
@@ -148,6 +177,7 @@ def process_voice_interview_answer(
             assistant_text="질문이 모두 끝났어요. 이제 이야기를 생성해보세요.",
             next_state=state,
             prompt_state=prompt_state,
+            reason_code="interview_complete",
             answer_summary="이미 인터뷰 완료 상태",
         )
 
@@ -156,12 +186,22 @@ def process_voice_interview_answer(
     summary = assessment.answer_summary.strip() or user_text.strip()
 
     if decision.decision == "repeat":
+        if decision.reason_code == "question_echo":
+            assistant_text = (
+                f"질문이 다시 들린 것 같아요. 답변만 천천히 말씀해주세요. "
+                f"{question.hint}"
+            ).strip()
+        elif decision.reason_code == "empty_answer":
+            assistant_text = "답변이 들리지 않았어요. 기억나는 내용부터 천천히 말씀해주세요."
+        else:
+            assistant_text = "말씀을 정확히 알아듣지 못했어요. 같은 내용을 조금만 천천히 다시 말씀해주세요."
         prompt_state = build_voice_interview_prompt_state(state)
         return VoiceInterviewTurnOutcome(
             decision="repeat",
-            assistant_text="말씀을 정확히 알아듣지 못했어요. 같은 내용을 조금만 천천히 다시 말씀해주세요.",
+            assistant_text=assistant_text,
             next_state=_build_state_with_metadata(state, decision),
             prompt_state=prompt_state,
+            reason_code=decision.reason_code,
             answer_summary=summary,
             filled_slots=assessment.filled_slots,
             missing_slots=assessment.missing_slots,
@@ -180,6 +220,21 @@ def process_voice_interview_answer(
             assistant_text=safe_follow_up_question,
             next_state=next_state,
             prompt_state=prompt_state,
+            reason_code=decision.reason_code,
+            answer_summary=summary,
+            filled_slots=assessment.filled_slots,
+            missing_slots=assessment.missing_slots,
+        )
+
+    if decision.decision == "pass":
+        next_state = _build_passed_current_question_state(state, user_text, decision)
+        prompt_state = build_voice_interview_prompt_state(next_state)
+        return VoiceInterviewTurnOutcome(
+            decision="pass",
+            assistant_text="좋아요. 이 질문은 충분히 들었어요. 더 덧붙일 내용이 없다면 직접 다음 질문으로 넘어가주세요.",
+            next_state=next_state,
+            prompt_state=prompt_state,
+            reason_code=decision.reason_code,
             answer_summary=summary,
             filled_slots=assessment.filled_slots,
             missing_slots=assessment.missing_slots,
@@ -205,6 +260,7 @@ def process_voice_interview_answer(
         assistant_text=assistant_text,
         next_state=next_state,
         prompt_state=prompt_state,
+        reason_code=decision.reason_code,
         answer_summary=summary,
         filled_slots=assessment.filled_slots,
         missing_slots=assessment.missing_slots,

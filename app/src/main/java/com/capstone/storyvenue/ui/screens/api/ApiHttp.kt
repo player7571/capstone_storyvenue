@@ -11,6 +11,13 @@ object ApiHttp {
 
     val client: OkHttpClient = OkHttpClient()
 
+    val chapterClient: OkHttpClient = client.newBuilder()
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(240, TimeUnit.SECONDS)
+        .callTimeout(300, TimeUnit.SECONDS)
+        .build()
+
     val voiceClient: OkHttpClient = client.newBuilder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)

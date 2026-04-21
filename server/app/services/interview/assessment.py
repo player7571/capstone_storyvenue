@@ -1,3 +1,5 @@
+from difflib import SequenceMatcher
+import re
 from textwrap import dedent
 
 from app.services.interview.llm import get_interview_openai_client
@@ -31,6 +33,7 @@ ASSESSMENT_SYSTEM_PROMPT = dedent(
       1 = 감정이나 의미가 드러남
     - transcript_unclear는 소음이 많거나 뜻을 거의 파악하기 어려울 때만 true로 하세요.
     - off_topic은 말 자체는 들리지만 현재 질문과 방향이 꽤 어긋날 때만 true로 하세요.
+    - question_echo는 사용자가 답하지 않고 현재 질문이나 질문에 매우 가까운 문장을 그대로 되묻는 경우만 true로 하세요.
     - answer_summary는 사용자의 답변을 1문장 이내로 짧게 요약합니다.
     """
 ).strip()
@@ -150,6 +153,19 @@ LOCAL_SLOT_KEYWORDS: dict[SlotName, tuple[str, ...]] = {
     ),
 }
 
+QUESTION_LIKE_ENDINGS = (
+    "?",
+    "나요",
+    "인가요",
+    "일까요",
+    "까요",
+    "어요?",
+    "예요?",
+    "있나요",
+    "있어요?",
+    "었나요",
+)
+
 
 def _sanitize_slots(
     raw_slots: list[str],
@@ -178,6 +194,75 @@ def _sanitize_score(raw_value: int, minimum: int, maximum: int) -> int:
     except (TypeError, ValueError):
         return minimum
     return min(max(numeric, minimum), maximum)
+
+
+def _normalize_compare_text(text: str) -> str:
+    lowered = text.lower().strip()
+    lowered = re.sub(r"[^\w\s가-힣]", " ", lowered)
+    lowered = re.sub(r"\s+", " ", lowered).strip()
+    return lowered
+
+
+def _tokenize_compare_text(text: str) -> list[str]:
+    return [token for token in _normalize_compare_text(text).split(" ") if len(token) >= 2]
+
+
+def _looks_like_question_form(text: str) -> bool:
+    stripped = text.strip().lower()
+    if not stripped:
+        return False
+    return any(stripped.endswith(ending) for ending in QUESTION_LIKE_ENDINGS)
+
+
+def _sequence_similarity(left: str, right: str) -> float:
+    if not left or not right:
+        return 0.0
+    return SequenceMatcher(None, left, right).ratio()
+
+
+def _token_overlap_ratio(left: str, right: str) -> float:
+    left_tokens = set(_tokenize_compare_text(left))
+    right_tokens = set(_tokenize_compare_text(right))
+    if not left_tokens or not right_tokens:
+        return 0.0
+    intersection = len(left_tokens & right_tokens)
+    union = len(left_tokens | right_tokens)
+    if union == 0:
+        return 0.0
+    return intersection / union
+
+
+def _looks_like_question_echo(question: InterviewQuestion, user_text: str) -> bool:
+    normalized_user = _normalize_compare_text(user_text)
+    if len(normalized_user) < 6:
+        return False
+
+    candidates = [question.main_question]
+    if question.hint:
+        candidates.append(question.hint)
+
+    best_sequence_ratio = 0.0
+    best_overlap_ratio = 0.0
+    for candidate in candidates:
+        normalized_candidate = _normalize_compare_text(candidate)
+        best_sequence_ratio = max(
+            best_sequence_ratio,
+            _sequence_similarity(normalized_user, normalized_candidate),
+        )
+        best_overlap_ratio = max(
+            best_overlap_ratio,
+            _token_overlap_ratio(normalized_user, normalized_candidate),
+        )
+
+    if best_sequence_ratio >= 0.82:
+        return True
+    if best_sequence_ratio >= 0.68 and (
+        _looks_like_question_form(user_text) or best_overlap_ratio >= 0.6
+    ):
+        return True
+    if best_overlap_ratio >= 0.8 and _looks_like_question_form(user_text):
+        return True
+    return False
 
 
 def _build_assessment_input(
@@ -239,6 +324,22 @@ def _normalize_assessment(
     assessment.relevance_score = _sanitize_score(assessment.relevance_score, 0, 2)
     assessment.detail_score = _sanitize_score(assessment.detail_score, 0, 2)
     assessment.reflection_score = _sanitize_score(assessment.reflection_score, 0, 1)
+    assessment.question_echo = bool(assessment.question_echo)
+
+    if _looks_like_question_echo(question, user_text):
+        assessment.question_echo = True
+
+    if assessment.question_echo:
+        assessment.filled_slots = []
+        assessment.missing_slots = list(question.target_slots)
+        assessment.relevance_score = 0
+        assessment.detail_score = 0
+        assessment.reflection_score = 0
+        assessment.transcript_unclear = False
+        assessment.off_topic = False
+        if not assessment.answer_summary.strip():
+            assessment.answer_summary = "질문을 반복한 것으로 보이는 응답"
+        return assessment
 
     combined_text = " ".join(
         [*get_question_answers(state, state.current_question_no), user_text]

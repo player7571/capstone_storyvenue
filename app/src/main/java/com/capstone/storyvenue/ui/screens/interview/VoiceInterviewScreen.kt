@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -85,6 +86,16 @@ fun defaultVoiceInterviewPrompt() = InterviewPromptData(
     questionStatus = "main",
     progressPercent = 10,
     isInterviewComplete = false,
+    currentQuestionHasAnswer = false,
+    currentQuestionAnswerCount = 0,
+    currentQuestionStoryReady = false,
+    currentQuestionStoryQuality = "none",
+    storyTargetQuestionNo = null,
+    storyTargetHasAnswer = false,
+    storyTargetAnswerCount = 0,
+    storyTargetStoryReady = false,
+    storyTargetStoryQuality = "none",
+    storyTargetIsCurrentQuestion = true,
 )
 
 private fun buildVoiceSessionTitle(): String {
@@ -92,22 +103,14 @@ private fun buildVoiceSessionTitle(): String {
     return "음성 문답 ${formatter.format(Date())}"
 }
 
-private fun chapterTypeFromAnsweredCount(answeredCount: Int): String {
-    return when {
-        answeredCount <= 2 -> "childhood"
-        answeredCount <= 4 -> "youth"
-        answeredCount <= 6 -> "career"
-        answeredCount <= 8 -> "love"
-        else -> "reflection"
-    }
-}
+private const val MIN_RECORDING_SECONDS = 2
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VoiceInterviewScreen(
     initialSessionId: String? = null,
     onBack: () -> Unit = {},
-    onGenerateChapter: (String, String) -> Unit = { _, _ -> },
+    onGenerateChapter: (String, Int?, String?, Boolean) -> Unit = { _, _, _, _ -> },
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -137,6 +140,7 @@ fun VoiceInterviewScreen(
     val isPlayingAudio = uiState.isPlayingAudio
     val recorderController = remember { AudioRecorderController() }
     val playerController = remember { AudioPlayerController() }
+    var showBasicStoryDialog by remember { mutableStateOf(false) }
 
     fun loadPhotoThumbnail(url: String) {
         scope.launch {
@@ -181,6 +185,10 @@ fun VoiceInterviewScreen(
             scope.launch { snackbarHostState.showSnackbar("로그인이 필요합니다.") }
             return
         }
+        if (isPlayingAudio) {
+            scope.launch { snackbarHostState.showSnackbar("AI 음성 재생이 끝난 뒤 녹음을 시작해주세요.") }
+            return
+        }
         if (isPreparingSession || isUploadingAudio || isSubmittingText || isNavigatingPrevious || isNavigatingNext || isRecording || isUploadingPhoto) return
 
         val currentSessionId = sessionId
@@ -209,6 +217,14 @@ fun VoiceInterviewScreen(
             return
         }
         viewModel.onRecordingStopped()
+
+        if (recordingSeconds < MIN_RECORDING_SECONDS) {
+            runCatching { file.delete() }
+            scope.launch {
+                snackbarHostState.showSnackbar("답변이 너무 짧아요. 조금 더 천천히 말씀해주세요.")
+            }
+            return
+        }
 
         scope.launch {
             if (!file.exists() || file.length() == 0L) {
@@ -387,6 +403,11 @@ fun VoiceInterviewScreen(
     val currentQuestionHint = currentPrompt?.questionHint
     val progressPercent = currentPrompt?.progressPercent ?: 0
     val isInterviewComplete = currentPrompt?.isInterviewComplete == true
+    val currentQuestionNo = currentPrompt?.currentQuestionNo
+    val currentQuestionHasAnswer = currentPrompt?.currentQuestionHasAnswer == true
+    val currentQuestionAnswerCount = currentPrompt?.currentQuestionAnswerCount ?: 0
+    val currentQuestionStoryReady = currentPrompt?.currentQuestionStoryReady == true
+    val currentQuestionStoryQuality = currentPrompt?.currentQuestionStoryQuality ?: "none"
     val assistantLabel = if (currentPrompt?.questionStatus == "follow_up") "AI 보조 질문" else "AI 인터뷰어"
     val recordingTimeText = String.format("%02d:%02d", recordingSeconds / 60, recordingSeconds % 60)
 
@@ -424,12 +445,58 @@ fun VoiceInterviewScreen(
         !isNavigatingPrevious &&
         !isNavigatingNext &&
         !isRecording
+    val canGenerateCurrentStory = sessionStarted &&
+        !isPreparingSession &&
+        !isUploadingPhoto &&
+        !isUploadingAudio &&
+        !isSubmittingText &&
+        !isNavigatingPrevious &&
+        !isNavigatingNext &&
+        !isRecording &&
+        (
+            if (sessionType == "photo") {
+                true
+            } else {
+                currentQuestionStoryReady && currentQuestionHasAnswer && currentQuestionAnswerCount > 0 && currentQuestionNo != null
+            }
+        )
 
     LaunchedEffect(uiState.errorMessage) {
         val msg = viewModel.consumeError()
         if (!msg.isNullOrBlank()) {
             snackbarHostState.showSnackbar(msg)
         }
+    }
+
+    if (showBasicStoryDialog && !sessionId.isNullOrBlank()) {
+        AlertDialog(
+            onDismissRequest = { showBasicStoryDialog = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showBasicStoryDialog = false
+                        onGenerateChapter(sessionId!!, currentQuestionNo, null, true)
+                    },
+                ) {
+                    Text("지금 만들기", fontFamily = SBAggroFamily, color = StoryVenueColors.Primary)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBasicStoryDialog = false }) {
+                    Text("한 번 더 말할래요", fontFamily = SBAggroFamily, color = StoryVenueColors.SubText)
+                }
+            },
+            title = {
+                Text("이야기 만들기", fontFamily = SBAggroFamily, color = StoryVenueColors.OnSurface)
+            },
+            text = {
+                Text(
+                    "답변이 조금 짧지만 지금 이야기로 만들 수 있어요. 계속할까요?",
+                    fontFamily = SBAggroFamily,
+                    color = StoryVenueColors.SubText,
+                )
+            },
+        )
     }
 
     Scaffold(
@@ -762,8 +829,30 @@ fun VoiceInterviewScreen(
 
             Spacer(Modifier.height(32.dp))
 
+            if (sessionType != "photo") {
+                val helperText = when {
+                    currentQuestionNo == null -> "현재 질문에 답변하면 이야기를 만들 수 있어요."
+                    !currentQuestionHasAnswer || currentQuestionAnswerCount <= 0 ->
+                        "현재 질문에 답변해야 이 질문의 이야기를 만들 수 있어요."
+                    currentQuestionStoryQuality == "basic" ->
+                        "현재 질문 답변이 짧아도 지금 이야기로 만들 수 있어요."
+                    currentQuestionStoryReady ->
+                        "현재 질문 답변으로 이야기를 만들 수 있어요."
+                    else ->
+                        "현재 질문에 답변하면 이야기를 만들 수 있어요."
+                }
+                Text(
+                    text = helperText,
+                    fontSize = 14.sp,
+                    color = StoryVenueColors.SubText,
+                    fontFamily = SBAggroFamily,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+
             StoryButton(
-                text = "이야기 생성하기",
                 onClick = {
                     if (isRecording || isUploadingAudio || isSubmittingText || isNavigatingPrevious || isNavigatingNext || isUploadingPhoto) return@StoryButton
                     val currentSessionId = sessionId
@@ -772,22 +861,30 @@ fun VoiceInterviewScreen(
                             snackbarHostState.showSnackbar("세션이 준비되지 않았습니다. 잠시 후 다시 시도해주세요.")
                         }
                     } else {
-                        val answeredCount = if (isInterviewComplete) {
-                            totalQuestions
-                        } else {
-                            (currentProgress - 1).coerceAtLeast(0)
+                        if (sessionType == "photo") {
+                            onGenerateChapter(currentSessionId, null, "reflection", false)
+                            return@StoryButton
                         }
-                        if (answeredCount == 0) {
+                        if (!canGenerateCurrentStory || currentQuestionNo == null) {
                             scope.launch {
-                                snackbarHostState.showSnackbar("최소 1개 이상 답변한 뒤 이야기를 생성할 수 있습니다.")
+                                snackbarHostState.showSnackbar("현재 질문에 답변해야 이 질문의 이야기를 만들 수 있어요.")
                             }
                             return@StoryButton
                         }
-                        val chapterType = chapterTypeFromAnsweredCount(answeredCount)
-                        onGenerateChapter(currentSessionId, chapterType)
+                        if (currentQuestionStoryQuality == "basic") {
+                            showBasicStoryDialog = true
+                        } else {
+                            onGenerateChapter(currentSessionId, currentQuestionNo, null, false)
+                        }
                     }
                 },
                 isLoading = false,
+                enabled = canGenerateCurrentStory,
+                text = if (sessionType != "photo" && currentQuestionNo != null) {
+                    "이야기 ${currentQuestionNo} 생성하기"
+                } else {
+                    "이야기 생성하기"
+                },
             )
 
             Spacer(Modifier.height(32.dp))

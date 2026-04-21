@@ -5,15 +5,18 @@ from pydantic import BaseModel, Field
 INTERVIEW_STATE_ROLE = "assistant"
 INTERVIEW_STATE_PREFIX = "__INTERVIEW_STATE__:"
 
+ChapterType = Literal["childhood", "youth", "career", "love", "reflection"]
 SlotName = Literal["person", "place", "time", "event", "emotion", "scene", "value"]
 TurnDecision = Literal["pass", "follow_up", "move_on", "repeat"]
 QuestionStatus = Literal["main", "follow_up", "completed"]
+StoryQuality = Literal["none", "basic", "ready"]
 
 
 class InterviewQuestion(BaseModel):
     question_no: int
     main_question: str
     hint: str
+    chapter_type: ChapterType
     target_slots: list[SlotName]
     required_slots: list[SlotName] = Field(default_factory=list)
     required_slot_min_hits: int = 1
@@ -31,6 +34,8 @@ class VoiceInterviewState(BaseModel):
     last_follow_up_question: str | None = None
     collected_answers: list[str] = Field(default_factory=list)
     question_answers: dict[str, list[str]] = Field(default_factory=dict)
+    question_statuses: dict[str, str] = Field(default_factory=dict)
+    question_story_qualities: dict[str, StoryQuality] = Field(default_factory=dict)
     question_bank_version: int = 1
     is_interview_complete: bool = False
     last_decision: TurnDecision | None = None
@@ -50,6 +55,18 @@ class VoiceInterviewPromptState(BaseModel):
     question_status: QuestionStatus = "main"
     progress_percent: int
     is_interview_complete: bool = False
+    current_question_has_answer: bool = False
+    current_question_answer_count: int = 0
+    current_question_story_ready: bool = False
+    current_question_story_quality: StoryQuality = "none"
+    current_question_completed: bool = False
+    current_question_can_move_next: bool = False
+    story_target_question_no: int | None = None
+    story_target_has_answer: bool = False
+    story_target_answer_count: int = 0
+    story_target_story_ready: bool = False
+    story_target_story_quality: StoryQuality = "none"
+    story_target_is_current_question: bool = True
 
 
 class VoiceInterviewAssessment(BaseModel):
@@ -61,6 +78,7 @@ class VoiceInterviewAssessment(BaseModel):
     reflection_score: int = 0
     transcript_unclear: bool = False
     off_topic: bool = False
+    question_echo: bool = False
 
 
 class FollowUpQuestionResponse(BaseModel):
@@ -82,6 +100,7 @@ class VoiceInterviewTurnOutcome(BaseModel):
     assistant_text: str
     next_state: VoiceInterviewState
     prompt_state: VoiceInterviewPromptState
+    reason_code: str | None = None
     answer_summary: str = ""
     filled_slots: list[SlotName] = Field(default_factory=list)
     missing_slots: list[SlotName] = Field(default_factory=list)
