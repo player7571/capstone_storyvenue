@@ -83,18 +83,13 @@ def _get_openai_client() -> OpenAI:
 
 def _format_conversation_history(conversation_history: list[dict]) -> str:
     lines: list[str] = []
-    speaker_map = {
-        "user": "사용자",
-        "assistant": "인터뷰어",
-    }
 
     for message in conversation_history:
         role = str(message.get("role", "")).strip().lower()
         content = str(message.get("content", "")).strip()
-        if not content:
+        if role != "user" or not content:
             continue
-        speaker = speaker_map.get(role, role or "알 수 없음")
-        lines.append(f"{speaker}: {content}")
+        lines.append(f"사용자: {content}")
 
     if not lines:
         raise ValueError("유효한 대화 내용이 없습니다.")

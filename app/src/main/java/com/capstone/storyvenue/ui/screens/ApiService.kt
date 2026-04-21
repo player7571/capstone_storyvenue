@@ -8,14 +8,22 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.SocketTimeoutException
 import java.time.Instant
 import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
+import java.util.concurrent.TimeUnit
 
 object ApiService {
 
     private const val BASE_URL = "http://10.0.2.2:8000"
     private val client = OkHttpClient()
+    private val voiceClient = client.newBuilder()
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(180, TimeUnit.SECONDS)
+        .callTimeout(200, TimeUnit.SECONDS)
+        .build()
     private val JSON_TYPE = "application/json; charset=utf-8".toMediaType()
     private val DEFAULT_BINARY = "application/octet-stream".toMediaType()
 
@@ -430,11 +438,11 @@ object ApiService {
                 .post(multipartBody)
                 .build()
 
-            val response = client.newCall(request).execute()
+            val response = voiceClient.newCall(request).execute()
             val body = response.body?.string() ?: ""
-            val json = JSONObject(body)
 
             if (response.isSuccessful) {
+                val json = JSONObject(body)
                 val audioUrl = json.optString("audio_url", "")
                 Result.success(
                     VoiceTurnData(
@@ -446,6 +454,8 @@ object ApiService {
             } else {
                 Result.failure(Exception(parseErrorMessage(body, "음성 문답 처리 실패")))
             }
+        } catch (_: SocketTimeoutException) {
+            Result.failure(Exception("분석 시간이 길어지고 있습니다. 네트워크 상태를 확인하고 다시 시도해주세요."))
         } catch (e: Exception) {
             Result.failure(e)
         }

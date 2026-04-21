@@ -76,12 +76,22 @@ import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
+private fun chapterTypeFromAnsweredCount(answeredCount: Int): String {
+    return when {
+        answeredCount <= 2 -> "childhood"
+        answeredCount <= 4 -> "youth"
+        answeredCount <= 6 -> "career"
+        answeredCount <= 8 -> "love"
+        else -> "reflection"
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VoiceInterviewScreen(
     initialSessionId: String? = null,
     onBack: () -> Unit = {},
-    onGenerateChapter: (String) -> Unit = {},
+    onGenerateChapter: (String, String) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -727,7 +737,13 @@ fun VoiceInterviewScreen(
                     if (currentSessionId.isNullOrBlank()) {
                         errorMessage = "세션이 준비되지 않았습니다. 잠시 후 다시 시도해주세요."
                     } else {
-                        onGenerateChapter(currentSessionId)
+                        val answeredCount = (currentQuestionIndex - 1).coerceAtLeast(0)
+                        if (answeredCount == 0) {
+                            errorMessage = "최소 1개 이상 답변한 뒤 이야기를 생성할 수 있습니다."
+                            return@StoryButton
+                        }
+                        val chapterType = chapterTypeFromAnsweredCount(answeredCount)
+                        onGenerateChapter(currentSessionId, chapterType)
                     }
                 },
                 isLoading = false,

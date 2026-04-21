@@ -64,10 +64,10 @@ def _load_conversation_history(session_id: UUID) -> list[dict[str, str]]:
     history: list[dict[str, str]] = []
     for row in result.data or []:
         content = str(row.get("content", "")).strip()
-        role = str(row.get("role", "")).strip()
-        if not content or not role:
+        role = str(row.get("role", "")).strip().lower()
+        if role != "user" or not content:
             continue
-        history.append({"role": role, "content": content})
+        history.append({"role": "user", "content": content})
 
     return history
 
@@ -105,7 +105,7 @@ async def generate_chapter(
     if not conversation_history:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="세션에 대화 기록이 없습니다.",
+            detail="세션에 사용자 답변 기록이 없습니다.",
         )
 
     try:

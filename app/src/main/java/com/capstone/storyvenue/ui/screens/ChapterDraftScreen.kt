@@ -34,14 +34,21 @@ import kotlinx.coroutines.withContext
 
 data class ChapterDraft(
     val chapterNumber: Int,
+    val chapterType: String,
     val title: String,
     val content: String
 )
 
-private fun chapterTypeFromNumber(chapterNumber: Int): String {
-    val types = listOf("childhood", "youth", "career", "love", "reflection")
-    val index = (chapterNumber - 1).coerceAtLeast(0) % types.size
-    return types[index]
+private val chapterTypes = listOf("childhood", "youth", "career", "love", "reflection")
+
+private fun normalizeChapterType(chapterType: String): String {
+    val normalized = chapterType.trim().lowercase()
+    return if (normalized in chapterTypes) normalized else "childhood"
+}
+
+private fun chapterNumberFromType(chapterType: String): Int {
+    val index = chapterTypes.indexOf(normalizeChapterType(chapterType))
+    return if (index >= 0) index + 1 else 1
 }
 
 /**
@@ -49,11 +56,11 @@ private fun chapterTypeFromNumber(chapterNumber: Int): String {
  * 실제 엔드포인트가 연결되기 전까지는 더미 데이터를 반환합니다.
  *
  * @param sessionId 인터뷰 세션 ID
- * @param chapterNumber 챕터 번호 (1-based)
+ * @param chapterType 챕터 타입 (childhood/youth/career/love/reflection)
  */
 suspend fun fetchChapterDraft(
     sessionId: String,
-    chapterNumber: Int,
+    chapterType: String,
     token: String,
 ): Result<ChapterDraft> = withContext(Dispatchers.IO) {
     if (sessionId.isBlank()) {
@@ -64,15 +71,20 @@ suspend fun fetchChapterDraft(
     }
 
     return@withContext try {
+        val normalizedType = normalizeChapterType(chapterType)
         val result = ApiService.generateChapter(
             token = token,
             sessionId = sessionId,
-            chapterType = chapterTypeFromNumber(chapterNumber),
+            chapterType = normalizedType,
         )
         result.map { chapter ->
+            val resolvedType = normalizeChapterType(
+                chapter.chapterType.ifBlank { normalizedType }
+            )
             ChapterDraft(
-                chapterNumber = chapterNumber,
-                title = chapter.title.ifBlank { "챕터 $chapterNumber" },
+                chapterNumber = chapterNumberFromType(resolvedType),
+                chapterType = resolvedType,
+                title = chapter.title.ifBlank { "챕터 ${chapterNumberFromType(resolvedType)}" },
                 content = chapter.content,
             )
         }
@@ -84,6 +96,7 @@ suspend fun fetchChapterDraft(
 
 private fun dummyChapter(number: Int) = ChapterDraft(
     chapterNumber = number,
+    chapterType = "youth",
     title         = "대학 시절",
     content       = """대학교에 처음 입학했을 때 가장 먼저 느꼈던 건 자유로움이었다. 고등학교 때와는 완전히 다른 세상이 펼쳐졌다.
 
@@ -102,7 +115,7 @@ private fun dummyChapter(number: Int) = ChapterDraft(
  * 챕터 초안 화면
  *
  * @param sessionId    인터뷰 세션 ID (API 연동용)
- * @param chapterNumber 표시할 챕터 번호 (1-based)
+ * @param chapterType  생성할 챕터 타입 (childhood/youth/career/love/reflection)
  * @param onBack       뒤로가기 콜백
  * @param onAddToBook  "책에 추가" 콜백
  */
@@ -110,7 +123,7 @@ private fun dummyChapter(number: Int) = ChapterDraft(
 @Composable
 fun ChapterDraftScreen(
     sessionId: String     = "",
-    chapterNumber: Int    = 3,
+    chapterType: String   = "childhood",
     onBack: () -> Unit    = {},
     onAddToBook: (ChapterDraft) -> Unit = {}
 ) {
@@ -125,8 +138,8 @@ fun ChapterDraftScreen(
     var errorMsg  by remember { mutableStateOf<String?>(null) }
 
     // 최초 로드
-    LaunchedEffect(sessionId, chapterNumber) {
-        loadDraft(sessionId, chapterNumber, token) { result, err ->
+    LaunchedEffect(sessionId, chapterType) {
+        loadDraft(sessionId, chapterType, token) { result, err ->
             draft     = result
             errorMsg  = err
             isLoading = false
@@ -138,13 +151,13 @@ fun ChapterDraftScreen(
         isLoading = true
         errorMsg  = null
         scope.launch {
-            loadDraft(sessionId, chapterNumber, token) { result, err ->
+            loadDraft(sessionId, chapterType, token) { result, err ->
                 draft     = result
                 errorMsg  = err
                 isLoading = false
             }
         }
-        Log.d("ChapterDraft", "다시 생성 클릭 — sessionId=$sessionId, chapter=$chapterNumber")
+        Log.d("ChapterDraft", "다시 생성 클릭 — sessionId=$sessionId, chapterType=$chapterType")
     }
 
     // ── UI ──────────────────────────────────────────────────────────────────
@@ -356,11 +369,11 @@ private fun BottomButtons(
 
 private suspend fun loadDraft(
     sessionId: String,
-    chapterNumber: Int,
+    chapterType: String,
     token: String,
     onResult: (ChapterDraft?, String?) -> Unit
 ) {
-    val result = fetchChapterDraft(sessionId, chapterNumber, token)
+    val result = fetchChapterDraft(sessionId, chapterType, token)
     withContext(Dispatchers.Main) {
         if (result.isSuccess) {
             onResult(result.getOrNull(), null)
