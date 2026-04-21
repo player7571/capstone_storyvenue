@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFil
 
 from app.api.dependencies.auth import get_current_user_id
 from app.api.schemas.sessions import (
+    InterviewStateResponse,
     PhotoSessionEndRequest,
     PhotoSessionEndResponse,
     PhotoSessionReplyRequest,
@@ -15,6 +16,15 @@ from app.api.schemas.sessions import (
 )
 from app.db.supabase import get_supabase
 from app.services import extract_memories
+from app.services.adaptive_interview import (
+    INTERVIEW_STATE_ROLE,
+    build_initial_voice_interview_state,
+    build_voice_interview_prompt_state,
+    derive_voice_interview_state_from_session_messages,
+    is_voice_interview_state_message,
+    move_voice_interview_question,
+    serialize_voice_interview_state,
+)
 from app.services.photo_interview import (
     generate_photo_follow_up_message,
     generate_photo_opening_message,
@@ -98,6 +108,16 @@ def _insert_session_message(session_id: UUID, role: str, content: str) -> dict:
     return result.data[0]
 
 
+def _insert_voice_interview_state(session_id: UUID) -> InterviewStateResponse:
+    initial_state = build_initial_voice_interview_state()
+    _insert_session_message(
+        session_id,
+        INTERVIEW_STATE_ROLE,
+        serialize_voice_interview_state(initial_state),
+    )
+    return InterviewStateResponse(**build_voice_interview_prompt_state(initial_state).model_dump())
+
+
 def _load_conversation_history(session_id: UUID) -> list[dict[str, str]]:
     result = (
         get_supabase()
@@ -113,11 +133,70 @@ def _load_conversation_history(session_id: UUID) -> list[dict[str, str]]:
     for row in result.data or []:
         role = str(row.get("role", "")).strip()
         content = str(row.get("content", "")).strip()
-        if role not in {"user", "assistant"} or not content:
+        if role not in {"user", "assistant"} or not content or is_voice_interview_state_message(content):
             continue
         history.append({"role": role, "content": content})
 
     return history
+
+
+def _load_voice_interview_state_response(session_id: UUID) -> InterviewStateResponse:
+    rows = (
+        get_supabase()
+        .table("session_messages")
+        .select("role, content")
+        .eq("session_id", str(session_id))
+        .order("created_at", desc=False)
+        .execute()
+    )
+    state = derive_voice_interview_state_from_session_messages(rows.data or [])
+    return InterviewStateResponse(**build_voice_interview_prompt_state(state).model_dump())
+
+
+def _build_session_response(session: dict) -> SessionResponse:
+    session_type = str(session.get("session_type") or "voice").strip().lower()
+    interview_state = None
+    if session_type != PHOTO_SESSION_TYPE:
+        interview_state = _load_voice_interview_state_response(UUID(str(session["id"])))
+    return SessionResponse(**session, interview_state=interview_state)
+
+
+def _move_voice_session_question(
+    session_id: UUID,
+    user_id: str,
+    direction: str,
+) -> InterviewStateResponse:
+    rows = (
+        get_supabase()
+        .table("session_messages")
+        .select("role, content")
+        .eq("session_id", str(session_id))
+        .order("created_at", desc=False)
+        .execute()
+    )
+    current_state = derive_voice_interview_state_from_session_messages(rows.data or [])
+    next_state = move_voice_interview_question(current_state, direction=direction)
+    if next_state is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="더 이상 이동할 수 없습니다.",
+        )
+
+    _insert_session_message(
+        session_id,
+        INTERVIEW_STATE_ROLE,
+        serialize_voice_interview_state(next_state),
+    )
+    status_value = PHOTO_COMPLETED_STATUS if next_state.is_interview_complete else "in_progress"
+    (
+        get_supabase()
+        .table("interview_sessions")
+        .update({"status": status_value})
+        .eq("id", str(session_id))
+        .eq("user_id", user_id)
+        .execute()
+    )
+    return InterviewStateResponse(**build_voice_interview_prompt_state(next_state).model_dump())
 
 
 def _validate_photo_upload(image_file: UploadFile, image_bytes: bytes) -> str:
@@ -245,6 +324,8 @@ async def create_session(
                     "user_id": user_id,
                     "title": body.title,
                     "theme": body.theme,
+                    "status": "in_progress",
+                    "session_type": "voice",
                 }
             )
             .execute()
@@ -254,7 +335,9 @@ async def create_session(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="세션 생성에 실패했습니다.",
             )
-        return SessionResponse(**result.data[0])
+        session = result.data[0]
+        interview_state = _insert_voice_interview_state(UUID(str(session["id"])))
+        return SessionResponse(**session, interview_state=interview_state)
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -362,13 +445,61 @@ async def get_session_detail(
     user_id: str = Depends(get_current_user_id),
 ):
     try:
-        return SessionResponse(**_get_session_or_404(session_id, user_id))
+        return _build_session_response(_get_session_or_404(session_id, user_id))
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="세션 상세 조회 중 오류가 발생했습니다.",
+        ) from exc
+
+
+@router.post("/{session_id}/previous-question", response_model=InterviewStateResponse)
+async def go_to_previous_question(
+    session_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+):
+    session = _get_session_or_404(session_id, user_id)
+    session_type = str(session.get("session_type") or "voice").strip().lower()
+    if session_type == PHOTO_SESSION_TYPE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="사진 문답에서는 이전 질문 기능을 사용할 수 없습니다.",
+        )
+
+    try:
+        return _move_voice_session_question(session_id, user_id, direction="previous")
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="이전 질문으로 이동하는 중 오류가 발생했습니다.",
+        ) from exc
+
+
+@router.post("/{session_id}/next-question", response_model=InterviewStateResponse)
+async def go_to_next_question(
+    session_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+):
+    session = _get_session_or_404(session_id, user_id)
+    session_type = str(session.get("session_type") or "voice").strip().lower()
+    if session_type == PHOTO_SESSION_TYPE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="사진 문답에서는 다음 질문 기능을 사용할 수 없습니다.",
+        )
+
+    try:
+        return _move_voice_session_question(session_id, user_id, direction="next")
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="다음 질문으로 이동하는 중 오류가 발생했습니다.",
         ) from exc
 
 

@@ -9,9 +9,17 @@ from openai import OpenAI
 from pydantic import BaseModel, Field
 
 from app.api.dependencies.auth import get_current_user_id
+from app.api.schemas.sessions import InterviewStateResponse
 from app.api.schemas.voice import VoiceTurnResponse
 from app.core.config import get_settings
 from app.db.supabase import get_supabase
+from app.services.adaptive_interview import (
+    INTERVIEW_STATE_ROLE,
+    derive_voice_interview_state_from_session_messages,
+    is_voice_interview_state_message,
+    process_voice_interview_answer,
+    serialize_voice_interview_state,
+)
 
 router = APIRouter(prefix="/voice", tags=["voice"])
 
@@ -20,6 +28,8 @@ INTERVIEWER_SYSTEM_PROMPT = (
     "사용자의 이야기를 깊이 있게 끌어내세요."
 )
 AUDIO_CACHE_DIR = Path(__file__).resolve().parents[3] / ".generated-audio"
+PHOTO_SESSION_TYPE = "photo"
+VOICE_COMPLETED_STATUS = "completed"
 
 
 class UserAnswerInsights(BaseModel):
@@ -42,7 +52,7 @@ def _get_session_or_404(session_id: UUID, user_id: str) -> dict:
     result = (
         get_supabase()
         .table("interview_sessions")
-        .select("id, user_id, status")
+        .select("id, user_id, status, session_type")
         .eq("id", str(session_id))
         .eq("user_id", user_id)
         .maybe_single()
@@ -72,6 +82,37 @@ def _insert_session_message(session_id: UUID, role: str, content: str) -> None:
     )
 
 
+def _load_voice_interview_state(session_id: UUID):
+    result = (
+        get_supabase()
+        .table("session_messages")
+        .select("role, content")
+        .eq("session_id", str(session_id))
+        .order("created_at", desc=False)
+        .execute()
+    )
+    return derive_voice_interview_state_from_session_messages(result.data or [])
+
+
+def _save_voice_interview_state(session_id: UUID, state) -> None:
+    _insert_session_message(
+        session_id,
+        INTERVIEW_STATE_ROLE,
+        serialize_voice_interview_state(state),
+    )
+
+
+def _update_voice_session_status(session_id: UUID, user_id: str, status_value: str) -> None:
+    (
+        get_supabase()
+        .table("interview_sessions")
+        .update({"status": status_value})
+        .eq("id", str(session_id))
+        .eq("user_id", user_id)
+        .execute()
+    )
+
+
 def _load_conversation_history(session_id: UUID) -> list[dict[str, str]]:
     result = (
         get_supabase()
@@ -87,7 +128,7 @@ def _load_conversation_history(session_id: UUID) -> list[dict[str, str]]:
     for row in result.data or []:
         role = str(row.get("role", "")).strip()
         content = str(row.get("content", "")).strip()
-        if role not in {"user", "assistant"} or not content:
+        if role not in {"user", "assistant"} or not content or is_voice_interview_state_message(content):
             continue
         history.append({"role": role, "content": content})
     return history
@@ -239,23 +280,59 @@ def _save_tts_file(session_id: UUID, audio_bytes: bytes) -> str:
     return f"/generated-audio/{filename}"
 
 
+def _run_user_turn(
+    session_id: UUID,
+    user_id: str,
+    session_type: str,
+    user_text: str,
+) -> tuple[str, str | None, InterviewStateResponse | None]:
+    decision = None
+    interview_state = None
+
+    if session_type == PHOTO_SESSION_TYPE:
+        _insert_session_message(session_id, "user", user_text)
+        history = _load_conversation_history(session_id)
+        assistant_text = _generate_assistant_reply(history)
+    else:
+        current_state = _load_voice_interview_state(session_id)
+        if current_state.is_interview_complete:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="이미 모든 질문이 완료되었습니다.",
+            )
+
+        _insert_session_message(session_id, "user", user_text)
+        outcome = process_voice_interview_answer(current_state, user_text)
+        assistant_text = outcome.assistant_text
+        decision = outcome.decision
+        interview_state = InterviewStateResponse(**outcome.prompt_state.model_dump())
+        _save_voice_interview_state(session_id, outcome.next_state)
+        if outcome.next_state.is_interview_complete:
+            _update_voice_session_status(session_id, user_id, VOICE_COMPLETED_STATUS)
+
+    _insert_session_message(session_id, "assistant", assistant_text)
+    return assistant_text, decision, interview_state
+
+
 @router.post("/turn", response_model=VoiceTurnResponse)
 async def voice_turn(
     session_id: UUID = Form(...),
     audio_file: UploadFile = File(...),
     user_id: str = Depends(get_current_user_id),
 ) -> VoiceTurnResponse:
-    _get_session_or_404(session_id, user_id)
+    session = _get_session_or_404(session_id, user_id)
 
     try:
+        session_type = str(session.get("session_type") or "voice").strip().lower()
         audio_bytes = await audio_file.read()
         raw_user_text = _transcribe_audio(audio_bytes, audio_file.filename)
         user_text = _normalize_stt_text(raw_user_text)
-        _insert_session_message(session_id, "user", user_text)
-
-        assistant_text = _generate_assistant_reply_from_user_text(user_text)
-        _insert_session_message(session_id, "assistant", assistant_text)
-
+        assistant_text, decision, interview_state = _run_user_turn(
+            session_id=session_id,
+            user_id=user_id,
+            session_type=session_type,
+            user_text=user_text,
+        )
         tts_audio = _synthesize_tts(assistant_text)
         audio_url = _save_tts_file(session_id, tts_audio)
     except HTTPException:
@@ -270,4 +347,47 @@ async def voice_turn(
         user_text=user_text,
         assistant_text=assistant_text,
         audio_url=audio_url,
+        decision=decision,
+        interview_state=interview_state,
+    )
+
+
+@router.post("/text-turn", response_model=VoiceTurnResponse)
+async def voice_text_turn(
+    session_id: UUID = Form(...),
+    user_text: str = Form(...),
+    user_id: str = Depends(get_current_user_id),
+) -> VoiceTurnResponse:
+    session = _get_session_or_404(session_id, user_id)
+    cleaned_text = user_text.strip()
+    if not cleaned_text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="텍스트 답변이 비어 있습니다.",
+        )
+
+    try:
+        session_type = str(session.get("session_type") or "voice").strip().lower()
+        assistant_text, decision, interview_state = _run_user_turn(
+            session_id=session_id,
+            user_id=user_id,
+            session_type=session_type,
+            user_text=cleaned_text,
+        )
+        tts_audio = _synthesize_tts(assistant_text)
+        audio_url = _save_tts_file(session_id, tts_audio)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"텍스트 턴 처리 중 오류가 발생했습니다: {exc}",
+        ) from exc
+
+    return VoiceTurnResponse(
+        user_text=cleaned_text,
+        assistant_text=assistant_text,
+        audio_url=audio_url,
+        decision=decision,
+        interview_state=interview_state,
     )

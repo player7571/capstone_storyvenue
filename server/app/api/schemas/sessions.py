@@ -9,6 +9,17 @@ class SessionCreateRequest(BaseModel):
     theme: str = Field(min_length=1, max_length=200)
 
 
+class InterviewStateResponse(BaseModel):
+    current_question_no: int
+    total_questions: int
+    main_question: str
+    question_hint: str | None = None
+    follow_up_count: int = 0
+    question_status: str
+    progress_percent: int
+    is_interview_complete: bool = False
+
+
 class SessionResponse(BaseModel):
     id: UUID
     user_id: UUID
@@ -18,6 +29,7 @@ class SessionResponse(BaseModel):
     photo_url: str | None = None
     session_type: str | None = None
     created_at: datetime
+    interview_state: InterviewStateResponse | None = None
 
 
 class PhotoSessionStartResponse(BaseModel):

@@ -9,6 +9,11 @@ from app.api.schemas.chapters import (
     ChapterUpdateRequest,
 )
 from app.db.supabase import get_supabase
+from app.services.adaptive_interview import (
+    build_question_answer_conversation_history,
+    derive_voice_interview_state_from_session_messages,
+    is_voice_interview_state_message,
+)
 from app.services import generate_chapter_content
 
 router = APIRouter(prefix="/chapters", tags=["chapters"])
@@ -18,7 +23,7 @@ def _get_session_or_404(session_id: UUID, user_id: str) -> dict:
     result = (
         get_supabase()
         .table("interview_sessions")
-        .select("id, user_id, status")
+        .select("id, user_id, status, session_type")
         .eq("id", str(session_id))
         .eq("user_id", user_id)
         .maybe_single()
@@ -61,11 +66,17 @@ def _load_conversation_history(session_id: UUID) -> list[dict[str, str]]:
         .execute()
     )
 
+    rows = result.data or []
+    state = derive_voice_interview_state_from_session_messages(rows)
+    question_answer_history = build_question_answer_conversation_history(state)
+    if question_answer_history:
+        return question_answer_history
+
     history: list[dict[str, str]] = []
-    for row in result.data or []:
+    for row in rows:
         content = str(row.get("content", "")).strip()
         role = str(row.get("role", "")).strip().lower()
-        if role != "user" or not content:
+        if role != "user" or not content or is_voice_interview_state_message(content):
             continue
         history.append({"role": "user", "content": content})
 
