@@ -330,6 +330,36 @@ async def list_chapters(
     return [ChapterResponse(**row) for row in result.data or []]
 
 
+@router.get("/latest", response_model=ChapterResponse)
+async def get_latest_chapter(
+    session_id: UUID = Query(...),
+    question_no: int | None = Query(default=None, ge=1, le=10),
+    user_id: str = Depends(get_current_user_id),
+):
+    _get_session_or_404(session_id, user_id)
+
+    query = (
+        get_supabase()
+        .table("chapter_drafts")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("session_id", str(session_id))
+        .order("created_at", desc=True)
+        .limit(1)
+    )
+    if question_no is not None:
+        query = query.eq("source_question_no", question_no)
+
+    result = query.execute()
+    rows = result.data or []
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="생성된 초안이 없습니다.",
+        )
+    return ChapterResponse(**rows[0])
+
+
 @router.get("/{chapter_id}", response_model=ChapterResponse)
 async def get_chapter(
     chapter_id: UUID,
@@ -366,3 +396,27 @@ async def update_chapter(
         )
 
     return ChapterResponse(**updated.data[0])
+
+
+@router.delete(
+    "/{chapter_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_chapter(
+    chapter_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+):
+    _get_chapter_or_404(chapter_id, user_id)
+    deleted = (
+        get_supabase()
+        .table("chapter_drafts")
+        .delete()
+        .eq("id", str(chapter_id))
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if deleted.data is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="챕터를 찾을 수 없습니다.",
+        )

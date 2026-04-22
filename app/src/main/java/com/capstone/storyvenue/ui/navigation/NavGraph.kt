@@ -29,7 +29,7 @@ object Routes {
     const val SIGNUP          = "signup"
     const val HOME            = "home"
     const val VOICE_INTERVIEW = "voice_interview?sessionId={sessionId}"
-    const val CHAPTER_DRAFT   = "chapter_draft/{sessionId}?questionNo={questionNo}&chapterType={chapterType}&allowBasic={allowBasic}"
+    const val CHAPTER_DRAFT   = "chapter_draft/{sessionId}?questionNo={questionNo}&chapterType={chapterType}&allowBasic={allowBasic}&autoGenerate={autoGenerate}"
     const val BOOK_PREVIEW    = "book_preview/{sessionId}"
     const val FEED            = "feed"
     const val FEED_DETAIL     = "feed_detail/{postId}"
@@ -48,10 +48,11 @@ object Routes {
         questionNo: Int? = null,
         chapterType: String? = null,
         allowBasic: Boolean = false,
+        autoGenerate: Boolean = false,
     ): String {
         val safeQuestionNo = questionNo ?: -1
         val safeChapterType = chapterType ?: ""
-        return "chapter_draft/$sessionId?questionNo=$safeQuestionNo&chapterType=$safeChapterType&allowBasic=$allowBasic"
+        return "chapter_draft/$sessionId?questionNo=$safeQuestionNo&chapterType=$safeChapterType&allowBasic=$allowBasic&autoGenerate=$autoGenerate"
     }
     fun bookPreview(sessionId: String) = "book_preview/$sessionId"
 }
@@ -110,6 +111,7 @@ fun StoryVenueNavGraph(
                             questionNo = questionNo,
                             chapterType = chapterType,
                             allowBasic = allowBasic,
+                            autoGenerate = true,
                         )
                     )
                 },
@@ -131,17 +133,23 @@ fun StoryVenueNavGraph(
                     type = NavType.BoolType
                     defaultValue = false
                 },
+                navArgument("autoGenerate") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                },
             ),
         ) { back ->
             val sessionId = back.arguments?.getString("sessionId") ?: ""
             val questionNo = back.arguments?.getInt("questionNo")?.takeIf { it > 0 }
             val chapterType = back.arguments?.getString("chapterType")?.takeIf { it.isNotBlank() }
             val allowBasic = back.arguments?.getBoolean("allowBasic") ?: false
+            val autoGenerate = back.arguments?.getBoolean("autoGenerate") ?: false
             ChapterDraftScreen(
                 sessionId = sessionId,
                 questionNo = questionNo,
                 chapterType = chapterType,
                 allowBasic = allowBasic,
+                autoGenerate = autoGenerate,
                 onBack = { navController.popBackStack() },
                 onAddToBook = { selectedSessionId ->
                     navController.navigate(Routes.bookPreview(selectedSessionId))

@@ -86,9 +86,22 @@ object ApiService {
         allowBasic = allowBasic,
     )
 
+    fun getLatestChapter(
+        token: String,
+        sessionId: String,
+        questionNo: Int? = null,
+    ): Result<GeneratedChapterData?> = ChapterBookApi.getLatestChapter(
+        token = token,
+        sessionId = sessionId,
+        questionNo = questionNo,
+    )
+
     // ── Chapters / Books ─────────────────────────────
     fun listChapters(token: String, sessionId: String? = null): Result<List<ChapterDraftData>> =
         ChapterBookApi.listChapters(token, sessionId)
+
+    fun deleteChapter(token: String, chapterId: String): Result<Unit> =
+        ChapterBookApi.deleteChapter(token, chapterId)
 
     fun compileBook(
         token: String,
@@ -253,6 +266,7 @@ data class ChapterDraftData(
     val content: String,
     val chapterType: String,
     val createdAt: String,
+    val sourceQuestionNo: Int? = null,
 )
 
 data class BookDetailData(
