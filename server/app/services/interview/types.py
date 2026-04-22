@@ -23,7 +23,8 @@ class InterviewQuestion(BaseModel):
     min_filled_slots: int = 2
     pass_score: int = 3
     alt_pass_routes: list[list[SlotName]] = Field(default_factory=list)
-    allow_emotion_exception: bool = False
+    story_generatable_routes: list[list[SlotName]] = Field(default_factory=list)
+    story_generatable_min_length: int = 30
     base_follow_ups: int = 2
     near_pass_extra_follow_ups: int = 1
 
@@ -36,6 +37,7 @@ class VoiceInterviewState(BaseModel):
     question_answers: dict[str, list[str]] = Field(default_factory=dict)
     question_statuses: dict[str, str] = Field(default_factory=dict)
     question_story_qualities: dict[str, StoryQuality] = Field(default_factory=dict)
+    question_story_ready_flags: dict[str, bool] = Field(default_factory=dict)
     question_bank_version: int = 1
     is_interview_complete: bool = False
     last_decision: TurnDecision | None = None
@@ -83,6 +85,10 @@ class VoiceInterviewAssessment(BaseModel):
 
 class FollowUpQuestionResponse(BaseModel):
     follow_up_question: str
+
+
+class InterviewerAcknowledgementResponse(BaseModel):
+    acknowledgement: str
 
 
 class VoiceInterviewDecision(BaseModel):

@@ -3,16 +3,21 @@ from app.services.interview import (
     SKIP_KEYWORDS,
     VoiceInterviewAssessment,
     VoiceInterviewDecision,
+    VoiceInterviewPromptState,
     VoiceInterviewState,
     VoiceInterviewTurnOutcome,
     append_question_answer,
     build_voice_interview_prompt_state,
     build_follow_up_fallback,
+    build_interviewer_acknowledgement_fallback,
+    build_interviewer_guidance,
     decide_interview_turn,
     get_interview_question,
     get_question_answers,
     get_total_question_count,
+    is_story_generatable_answer,
     request_follow_up_question,
+    request_interviewer_acknowledgement,
     request_voice_interview_assessment,
 )
 
@@ -81,10 +86,66 @@ def _build_state_with_metadata(
     )
 
 
+def _with_story_ready_flag(
+    state: VoiceInterviewState,
+    question_no: int,
+    is_ready: bool,
+) -> dict[str, bool]:
+    next_flags = dict(state.question_story_ready_flags)
+    key = str(question_no)
+    if is_ready:
+        next_flags[key] = True
+    return next_flags
+
+
+def _join_interviewer_sentences(
+    acknowledgement: str,
+    guidance: str,
+) -> str:
+    ack = acknowledgement.strip()
+    guide = guidance.strip()
+    if ack and guide:
+        return f"{ack} {guide}"
+    return ack or guide
+
+
+def _build_interviewer_message(
+    question: InterviewQuestion,
+    assessment: VoiceInterviewAssessment,
+    decision: VoiceInterviewDecision,
+    prompt_state: VoiceInterviewPromptState,
+    core_message: str,
+    *,
+    use_acknowledgement: bool = True,
+) -> str:
+    guidance = build_interviewer_guidance(decision, prompt_state, core_message)
+    if not use_acknowledgement:
+        return guidance
+
+    acknowledgement = ""
+    try:
+        acknowledgement = (
+            request_interviewer_acknowledgement(
+                question,
+                assessment,
+                decision,
+            )
+            or ""
+        )
+    except Exception:
+        acknowledgement = ""
+
+    if not acknowledgement:
+        acknowledgement = build_interviewer_acknowledgement_fallback(decision, assessment)
+
+    return _join_interviewer_sentences(acknowledgement, guidance)
+
+
 def _build_follow_up_state(
     state: VoiceInterviewState,
     user_text: str,
     decision: VoiceInterviewDecision,
+    story_generatable: bool,
 ) -> VoiceInterviewState:
     answers = get_question_answers(state, state.current_question_no)
     next_answers = append_question_answer(state, state.current_question_no, user_text)
@@ -97,6 +158,11 @@ def _build_follow_up_state(
         question_answers=next_answers,
         question_statuses=dict(state.question_statuses),
         question_story_qualities=dict(state.question_story_qualities),
+        question_story_ready_flags=_with_story_ready_flag(
+            state,
+            state.current_question_no,
+            story_generatable,
+        ),
         question_bank_version=state.question_bank_version,
         is_interview_complete=False,
     )
@@ -120,6 +186,11 @@ def _build_passed_current_question_state(
         question_answers=next_answers,
         question_statuses=dict(state.question_statuses),
         question_story_qualities=next_story_qualities,
+        question_story_ready_flags=_with_story_ready_flag(
+            state,
+            state.current_question_no,
+            True,
+        ),
         question_bank_version=state.question_bank_version,
         is_interview_complete=False,
     )
@@ -130,6 +201,7 @@ def _build_next_question_state(
     state: VoiceInterviewState,
     user_text: str | None,
     decision: VoiceInterviewDecision,
+    story_generatable: bool,
 ) -> VoiceInterviewState:
     next_question_answers = append_question_answer(
         state,
@@ -147,6 +219,11 @@ def _build_next_question_state(
             question_answers=next_question_answers,
             question_statuses=dict(state.question_statuses),
             question_story_qualities=dict(state.question_story_qualities),
+            question_story_ready_flags=_with_story_ready_flag(
+                state,
+                state.current_question_no,
+                story_generatable,
+            ),
             question_bank_version=state.question_bank_version,
             is_interview_complete=True,
         )
@@ -160,6 +237,11 @@ def _build_next_question_state(
         question_answers=next_question_answers,
         question_statuses=dict(state.question_statuses),
         question_story_qualities=dict(state.question_story_qualities),
+        question_story_ready_flags=_with_story_ready_flag(
+            state,
+            state.current_question_no,
+            story_generatable,
+        ),
         question_bank_version=state.question_bank_version,
         is_interview_complete=False,
     )
@@ -184,18 +266,27 @@ def process_voice_interview_answer(
     question = get_interview_question(state.current_question_no)
     assessment, decision = assess_voice_interview_answer(question, state, user_text)
     summary = assessment.answer_summary.strip() or user_text.strip()
+    story_generatable = is_story_generatable_answer(question, assessment, user_text.strip())
 
     if decision.decision == "repeat":
         if decision.reason_code == "question_echo":
-            assistant_text = (
+            core_message = (
                 f"질문이 다시 들린 것 같아요. 답변만 천천히 말씀해주세요. "
                 f"{question.hint}"
             ).strip()
         elif decision.reason_code == "empty_answer":
-            assistant_text = "답변이 들리지 않았어요. 기억나는 내용부터 천천히 말씀해주세요."
+            core_message = "답변이 들리지 않았어요. 기억나는 내용부터 천천히 말씀해주세요."
         else:
-            assistant_text = "말씀을 정확히 알아듣지 못했어요. 같은 내용을 조금만 천천히 다시 말씀해주세요."
+            core_message = "말씀을 정확히 알아듣지 못했어요. 같은 내용을 조금만 천천히 다시 말씀해주세요."
         prompt_state = build_voice_interview_prompt_state(state)
+        assistant_text = _build_interviewer_message(
+            question,
+            assessment,
+            decision,
+            prompt_state,
+            core_message,
+            use_acknowledgement=False,
+        )
         return VoiceInterviewTurnOutcome(
             decision="repeat",
             assistant_text=assistant_text,
@@ -213,11 +304,18 @@ def process_voice_interview_answer(
             or build_follow_up_fallback(question, assessment, decision, user_text.strip())
         ).strip()
         decision.follow_up_question = safe_follow_up_question
-        next_state = _build_follow_up_state(state, user_text, decision)
+        next_state = _build_follow_up_state(state, user_text, decision, story_generatable)
         prompt_state = build_voice_interview_prompt_state(next_state)
+        assistant_text = _build_interviewer_message(
+            question,
+            assessment,
+            decision,
+            prompt_state,
+            safe_follow_up_question,
+        )
         return VoiceInterviewTurnOutcome(
             decision="follow_up",
-            assistant_text=safe_follow_up_question,
+            assistant_text=assistant_text,
             next_state=next_state,
             prompt_state=prompt_state,
             reason_code=decision.reason_code,
@@ -229,9 +327,16 @@ def process_voice_interview_answer(
     if decision.decision == "pass":
         next_state = _build_passed_current_question_state(state, user_text, decision)
         prompt_state = build_voice_interview_prompt_state(next_state)
+        assistant_text = _build_interviewer_message(
+            question,
+            assessment,
+            decision,
+            prompt_state,
+            "더 떠오르는 게 없으면 다음 질문으로 넘어가거나 지금 이야기를 만들어도 괜찮아요.",
+        )
         return VoiceInterviewTurnOutcome(
             decision="pass",
-            assistant_text="좋아요. 이 질문은 충분히 들었어요. 더 덧붙일 내용이 없다면 직접 다음 질문으로 넘어가주세요.",
+            assistant_text=assistant_text,
             next_state=next_state,
             prompt_state=prompt_state,
             reason_code=decision.reason_code,
@@ -245,15 +350,25 @@ def process_voice_interview_answer(
         state,
         user_text if should_store_answer else None,
         decision,
+        story_generatable if should_store_answer else False,
     )
     prompt_state = build_voice_interview_prompt_state(next_state)
 
     if next_state.is_interview_complete:
-        assistant_text = "잘 들었습니다. 질문이 모두 끝났어요. 이제 이야기를 생성해보세요."
+        core_message = "잘 들었습니다. 질문이 모두 끝났어요. 이제 이야기를 생성해보세요."
     elif decision.decision == "move_on":
-        assistant_text = "괜찮아요. 기억나는 만큼으로도 충분해요. 다음 이야기로 넘어가볼게요."
+        core_message = "괜찮아요. 기억나는 만큼으로도 충분해요. 다음 이야기로 넘어가볼게요."
     else:
-        assistant_text = "잘 들었습니다. 다음 이야기로 넘어가볼게요."
+        core_message = "잘 들었습니다. 다음 이야기로 넘어가볼게요."
+
+    assistant_text = _build_interviewer_message(
+        question,
+        assessment,
+        decision,
+        prompt_state,
+        core_message,
+        use_acknowledgement=False,
+    )
 
     return VoiceInterviewTurnOutcome(
         decision=decision.decision,

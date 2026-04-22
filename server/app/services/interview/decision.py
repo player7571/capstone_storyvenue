@@ -68,38 +68,23 @@ def matched_alt_pass_route(
     return None
 
 
-def passes_emotion_exception(
+def matches_story_generatable_route(
     question: InterviewQuestion,
     assessment: VoiceInterviewAssessment,
 ) -> bool:
-    return (
-        question.allow_emotion_exception
-        and assessment.relevance_score >= 1
-        and "emotion" in assessment.filled_slots
-        and total_assessment_score(assessment) >= max(question.pass_score - 1, 2)
-    )
+    return any(all(slot in assessment.filled_slots for slot in route) for route in question.story_generatable_routes)
 
 
-def is_near_pass(question: InterviewQuestion, assessment: VoiceInterviewAssessment) -> bool:
-    required_hits = count_required_slot_hits(question, assessment.filled_slots)
-    required_ok = not question.required_slots or required_hits >= question.required_slot_min_hits
-    score_gap = question.pass_score - total_assessment_score(assessment)
-    slot_gap = question.min_filled_slots - len(assessment.filled_slots)
-    return (
-        assessment.relevance_score >= 1
-        and required_ok
-        and score_gap <= 1
-        and slot_gap <= 1
-    )
-
-
-def get_allowed_follow_ups(
+def is_story_generatable_answer(
     question: InterviewQuestion,
     assessment: VoiceInterviewAssessment,
-) -> int:
-    if is_near_pass(question, assessment):
-        return question.base_follow_ups + question.near_pass_extra_follow_ups
-    return question.base_follow_ups
+    cleaned_text: str,
+) -> bool:
+    if assessment.transcript_unclear or assessment.question_echo:
+        return False
+    if len(cleaned_text.strip()) < question.story_generatable_min_length:
+        return False
+    return matches_story_generatable_route(question, assessment)
 
 
 def pick_missing_slot(
@@ -158,23 +143,6 @@ def decide_interview_turn(
             decision="pass",
             reason_code="alt_pass_route",
             pass_route=pass_route,
-            total_score=total_score,
-            required_slot_hits=required_hits,
-        )
-
-    if passes_emotion_exception(question, assessment):
-        return VoiceInterviewDecision(
-            decision="pass",
-            reason_code="emotion_exception",
-            total_score=total_score,
-            required_slot_hits=required_hits,
-        )
-
-    allowed_follow_ups = get_allowed_follow_ups(question, assessment)
-    if state.follow_up_count >= allowed_follow_ups:
-        return VoiceInterviewDecision(
-            decision="move_on",
-            reason_code="follow_up_limit",
             total_score=total_score,
             required_slot_hits=required_hits,
         )

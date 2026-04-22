@@ -6,6 +6,7 @@ from app.api.dependencies.auth import get_current_user_id
 from app.api.schemas.chapters import (
     ChapterGenerateRequest,
     ChapterResponse,
+    ChapterSummaryResponse,
     ChapterUpdateRequest,
 )
 from app.db.supabase import get_supabase
@@ -57,6 +58,13 @@ def _get_chapter_or_404(chapter_id: UUID, user_id: str) -> dict:
             detail="챕터를 찾을 수 없습니다.",
         )
     return result.data
+
+
+def _build_chapter_preview(content: str, limit: int = 120) -> str:
+    normalized = " ".join(str(content or "").strip().split())
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[:limit].rstrip() + " ..."
 
 
 def _load_legacy_conversation_history(session_id: UUID) -> list[dict[str, str]]:
@@ -135,24 +143,7 @@ def _load_voice_question_story_context(
 
     question = get_interview_question(question_no)
     current_answer_text = "\n".join(current_answers).strip()
-    history: list[dict[str, str]] = []
-
-    if question_no > 1:
-        previous_answers = get_question_answers(state, question_no - 1)
-        if previous_answers:
-            previous_question = get_interview_question(question_no - 1)
-            history.append(
-                {
-                    "role": "user",
-                    "content": (
-                        "[이전 질문 참고]\n"
-                        f"질문: {previous_question.main_question}\n"
-                        f"답변: {' '.join(previous_answers)}"
-                    ),
-                }
-            )
-
-    history.append(
+    history: list[dict[str, str]] = [
         {
             "role": "user",
             "content": (
@@ -161,8 +152,8 @@ def _load_voice_question_story_context(
                 f"힌트: {question.hint}\n"
                 f"답변: {current_answer_text}"
             ),
-        }
-    )
+        },
+    ]
 
     story_quality = get_question_story_quality(state, question_no)
     return history, current_answer_text, story_quality
@@ -311,9 +302,11 @@ async def generate_chapter(
     return ChapterResponse(**created.data[0])
 
 
-@router.get("", response_model=list[ChapterResponse])
+@router.get("", response_model=list[ChapterSummaryResponse])
 async def list_chapters(
     session_id: UUID | None = Query(default=None),
+    question_no: int | None = Query(default=None, ge=1, le=10),
+    latest_only: bool = Query(default=False),
     user_id: str = Depends(get_current_user_id),
 ):
     query = (
@@ -325,9 +318,59 @@ async def list_chapters(
     )
     if session_id is not None:
         query = query.eq("session_id", str(session_id))
+    if question_no is not None:
+        query = query.eq("source_question_no", question_no)
 
     result = query.execute()
-    return [ChapterResponse(**row) for row in result.data or []]
+    rows = result.data or []
+
+    if latest_only:
+        latest_rows_by_question: dict[int | None, dict] = {}
+        for row in rows:
+            key = row.get("source_question_no")
+            if key not in latest_rows_by_question:
+                latest_rows_by_question[key] = row
+        rows = list(latest_rows_by_question.values())
+
+    return [
+        ChapterSummaryResponse(
+            **{
+                **row,
+                "preview": _build_chapter_preview(str(row.get("content", ""))),
+            }
+        )
+        for row in rows
+    ]
+
+
+@router.get("/latest", response_model=ChapterResponse)
+async def get_latest_chapter(
+    session_id: UUID = Query(...),
+    question_no: int | None = Query(default=None, ge=1, le=10),
+    user_id: str = Depends(get_current_user_id),
+):
+    _get_session_or_404(session_id, user_id)
+
+    query = (
+        get_supabase()
+        .table("chapter_drafts")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("session_id", str(session_id))
+        .order("created_at", desc=True)
+        .limit(1)
+    )
+    if question_no is not None:
+        query = query.eq("source_question_no", question_no)
+
+    result = query.execute()
+    rows = result.data or []
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="생성된 초안이 없습니다.",
+        )
+    return ChapterResponse(**rows[0])
 
 
 @router.get("/{chapter_id}", response_model=ChapterResponse)
@@ -366,3 +409,27 @@ async def update_chapter(
         )
 
     return ChapterResponse(**updated.data[0])
+
+
+@router.delete(
+    "/{chapter_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_chapter(
+    chapter_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+):
+    _get_chapter_or_404(chapter_id, user_id)
+    deleted = (
+        get_supabase()
+        .table("chapter_drafts")
+        .delete()
+        .eq("id", str(chapter_id))
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if deleted.data is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="챕터를 찾을 수 없습니다.",
+        )

@@ -22,6 +22,8 @@ class InterviewStateResponse(BaseModel):
     current_question_answer_count: int = 0
     current_question_story_ready: bool = False
     current_question_story_quality: str = "none"
+    current_question_completed: bool = False
+    current_question_can_move_next: bool = False
     story_target_question_no: int | None = None
     story_target_has_answer: bool = False
     story_target_answer_count: int = 0
@@ -40,6 +42,16 @@ class SessionResponse(BaseModel):
     session_type: str | None = None
     created_at: datetime
     interview_state: InterviewStateResponse | None = None
+
+
+class SessionSummaryResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    title: str | None = None
+    theme: str | None = None
+    status: str | None = None
+    session_type: str | None = None
+    created_at: datetime
 
 
 class PhotoSessionStartResponse(BaseModel):

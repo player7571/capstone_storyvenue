@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -33,12 +34,20 @@ import kotlinx.coroutines.withContext
 // ──────────────────────────────────────────────────────────────────────────────
 
 data class ChapterDraft(
+    val id: String,
     val chapterNumber: Int,
     val chapterType: String,
     val title: String,
     val content: String,
     val storyQualityAtGeneration: String? = null,
 )
+
+private sealed interface ChapterDraftScreenState {
+    data object Loading : ChapterDraftScreenState
+    data object Empty : ChapterDraftScreenState
+    data class Loaded(val draft: ChapterDraft) : ChapterDraftScreenState
+    data class Error(val message: String) : ChapterDraftScreenState
+}
 
 /**
  * 서버에서 챕터 초안을 가져옵니다.
@@ -47,7 +56,7 @@ data class ChapterDraft(
  * @param sessionId 인터뷰 세션 ID
  * @param chapterType 챕터 타입 (childhood/youth/career/love/reflection)
  */
-suspend fun fetchChapterDraft(
+suspend fun generateChapterDraft(
     sessionId: String,
     questionNo: Int?,
     chapterType: String?,
@@ -72,6 +81,7 @@ suspend fun fetchChapterDraft(
         result.map { chapter ->
             val resolvedQuestionNo = chapter.sourceQuestionNo ?: questionNo ?: 1
             ChapterDraft(
+                id = chapter.id,
                 chapterNumber = resolvedQuestionNo,
                 chapterType = chapter.chapterType.ifBlank { chapterType.orEmpty() },
                 title = chapter.title.ifBlank { "이야기 $resolvedQuestionNo" },
@@ -85,7 +95,44 @@ suspend fun fetchChapterDraft(
     }
 }
 
+suspend fun fetchLatestChapterDraft(
+    sessionId: String,
+    questionNo: Int?,
+    token: String,
+): Result<ChapterDraft?> = withContext(Dispatchers.IO) {
+    if (sessionId.isBlank()) {
+        return@withContext Result.failure(Exception("세션 정보가 없습니다. 인터뷰를 다시 시작해주세요."))
+    }
+    if (token.isBlank()) {
+        return@withContext Result.failure(Exception("로그인이 필요합니다."))
+    }
+
+    return@withContext try {
+        val result = ApiService.getLatestChapter(
+            token = token,
+            sessionId = sessionId,
+            questionNo = questionNo,
+        )
+        result.map { chapter ->
+            chapter?.let {
+                ChapterDraft(
+                    id = it.id,
+                    chapterNumber = it.sourceQuestionNo ?: questionNo ?: 1,
+                    chapterType = it.chapterType,
+                    title = it.title.ifBlank { "이야기 ${it.sourceQuestionNo ?: questionNo ?: 1}" },
+                    content = it.content,
+                    storyQualityAtGeneration = it.storyQualityAtGeneration,
+                )
+            }
+        }
+    } catch (e: Exception) {
+        Log.w("ChapterDraft", "최신 초안 조회 실패: ${e.message}")
+        Result.failure(e)
+    }
+}
+
 private fun dummyChapter(number: Int) = ChapterDraft(
+    id = "preview-$number",
     chapterNumber = number,
     chapterType = "youth",
     title         = "대학 시절",
@@ -117,6 +164,7 @@ fun ChapterDraftScreen(
     questionNo: Int?      = null,
     chapterType: String?  = null,
     allowBasic: Boolean   = false,
+    autoGenerate: Boolean = false,
     onBack: () -> Unit    = {},
     onAddToBook: (String) -> Unit = {}
 ) {
@@ -126,29 +174,60 @@ fun ChapterDraftScreen(
     val scope = rememberCoroutineScope()
 
     // ── 상태 ────────────────────────────────────────────────────────────────
-    var draft   by remember { mutableStateOf<ChapterDraft?>(null) }
-    var isLoading by remember { mutableStateOf(true) }
-    var errorMsg  by remember { mutableStateOf<String?>(null) }
+    var screenState by remember { mutableStateOf<ChapterDraftScreenState>(ChapterDraftScreenState.Loading) }
+    var pendingAutoGenerate by rememberSaveable(sessionId, questionNo, chapterType, allowBasic) {
+        mutableStateOf(autoGenerate)
+    }
+
+    suspend fun loadLatestDraftState() {
+        screenState = ChapterDraftScreenState.Loading
+        val result = fetchLatestChapterDraft(
+            sessionId = sessionId,
+            questionNo = questionNo,
+            token = token,
+        )
+        screenState = if (result.isSuccess) {
+            result.getOrNull()?.let { ChapterDraftScreenState.Loaded(it) }
+                ?: ChapterDraftScreenState.Empty
+        } else {
+            ChapterDraftScreenState.Error(
+                result.exceptionOrNull()?.message ?: "최신 초안을 불러오지 못했습니다."
+            )
+        }
+    }
+
+    suspend fun generateDraftState() {
+        screenState = ChapterDraftScreenState.Loading
+        val result = generateChapterDraft(
+            sessionId = sessionId,
+            questionNo = questionNo,
+            chapterType = chapterType,
+            allowBasic = allowBasic,
+            token = token,
+        )
+        screenState = if (result.isSuccess) {
+            pendingAutoGenerate = false
+            ChapterDraftScreenState.Loaded(result.getOrNull()!!)
+        } else {
+            ChapterDraftScreenState.Error(
+                result.exceptionOrNull()?.message ?: "알 수 없는 오류"
+            )
+        }
+    }
 
     // 최초 로드
     LaunchedEffect(sessionId, questionNo, chapterType, allowBasic) {
-        loadDraft(sessionId, questionNo, chapterType, allowBasic, token) { result, err ->
-            draft     = result
-            errorMsg  = err
-            isLoading = false
+        if (pendingAutoGenerate) {
+            generateDraftState()
+        } else {
+            loadLatestDraftState()
         }
     }
 
     // ── 함수 ────────────────────────────────────────────────────────────────
     fun regenerate() {
-        isLoading = true
-        errorMsg  = null
         scope.launch {
-            loadDraft(sessionId, questionNo, chapterType, allowBasic, token) { result, err ->
-                draft     = result
-                errorMsg  = err
-                isLoading = false
-            }
+            generateDraftState()
         }
         Log.d("ChapterDraft", "다시 생성 클릭 — sessionId=$sessionId, questionNo=$questionNo, chapterType=$chapterType")
     }
@@ -196,25 +275,41 @@ fun ChapterDraftScreen(
                     .weight(1f)
                     .padding(top = 8.dp, bottom = 16.dp)
             ) {
-                when {
-                    isLoading -> LoadingState()
-                    errorMsg  != null -> ErrorState(message = errorMsg!!, onRetry = ::regenerate)
-                    draft     != null -> DraftContent(draft = draft!!)
+                when (val state = screenState) {
+                    ChapterDraftScreenState.Loading -> LoadingState()
+                    ChapterDraftScreenState.Empty -> EmptyDraftState()
+                    is ChapterDraftScreenState.Error -> ErrorState(message = state.message, onRetry = {
+                        scope.launch {
+                            if (pendingAutoGenerate) {
+                                generateDraftState()
+                            } else {
+                                loadLatestDraftState()
+                            }
+                        }
+                    })
+                    is ChapterDraftScreenState.Loaded -> DraftContent(draft = state.draft)
                 }
             }
 
             // ── 하단 버튼 ──────────────────────────────────────────────────
-            BottomButtons(
-                isLoading    = isLoading,
-                onRegenerate = ::regenerate,
-                onAddToBook  = {
-                    draft?.let { d ->
-                        Log.d("ChapterDraft", "책에 추가 클릭 — title=${d.title}, sessionId=$sessionId")
+            when (val state = screenState) {
+                ChapterDraftScreenState.Loading -> Spacer(Modifier.height(24.dp))
+                ChapterDraftScreenState.Empty -> EmptyBottomButtons(
+                    isLoading = false,
+                    onGenerate = ::regenerate,
+                    modifier = Modifier.padding(bottom = 24.dp)
+                )
+                is ChapterDraftScreenState.Error -> Spacer(Modifier.height(24.dp))
+                is ChapterDraftScreenState.Loaded -> BottomButtons(
+                    isLoading = false,
+                    onRegenerate = ::regenerate,
+                    onAddToBook = {
+                        Log.d("ChapterDraft", "책에 추가 클릭 — title=${state.draft.title}, sessionId=$sessionId, chapterId=${state.draft.id}")
                         onAddToBook(sessionId)
-                    }
-                },
-                modifier = Modifier.padding(bottom = 24.dp)
-            )
+                    },
+                    modifier = Modifier.padding(bottom = 24.dp)
+                )
+            }
         }
     }
 }
@@ -276,6 +371,22 @@ private fun LoadingState() {
 }
 
 @Composable
+private fun EmptyDraftState() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "아직 생성된 이야기가 없어요.\n아래 버튼을 눌러 이야기를 만들어보세요.",
+            fontSize = 16.sp,
+            color = StoryVenueColors.SubText,
+            textAlign = TextAlign.Center,
+            lineHeight = 24.sp,
+        )
+    }
+}
+
+@Composable
 private fun ErrorState(message: String, onRetry: () -> Unit) {
     Box(
         modifier         = Modifier.fillMaxSize(),
@@ -294,6 +405,39 @@ private fun ErrorState(message: String, onRetry: () -> Unit) {
             TextButton(onClick = onRetry) {
                 Text("다시 시도", color = StoryVenueColors.Primary)
             }
+        }
+    }
+}
+
+@Composable
+private fun EmptyBottomButtons(
+    isLoading: Boolean,
+    onGenerate: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Button(
+            onClick = onGenerate,
+            enabled = !isLoading,
+            shape = RoundedCornerShape(50.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = StoryVenueColors.Primary,
+                contentColor = Color.White,
+                disabledContainerColor = StoryVenueColors.Divider,
+                disabledContentColor = StoryVenueColors.SubText
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+        ) {
+            Text(
+                text = "이야기 생성하기",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }
@@ -352,34 +496,6 @@ private fun BottomButtons(
                 fontSize   = 18.sp,
                 fontWeight = FontWeight.SemiBold
             )
-        }
-    }
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Internal helper (suspend → callback bridge)
-// ──────────────────────────────────────────────────────────────────────────────
-
-private suspend fun loadDraft(
-    sessionId: String,
-    questionNo: Int?,
-    chapterType: String?,
-    allowBasic: Boolean,
-    token: String,
-    onResult: (ChapterDraft?, String?) -> Unit
-) {
-    val result = fetchChapterDraft(
-        sessionId = sessionId,
-        questionNo = questionNo,
-        chapterType = chapterType,
-        allowBasic = allowBasic,
-        token = token,
-    )
-    withContext(Dispatchers.Main) {
-        if (result.isSuccess) {
-            onResult(result.getOrNull(), null)
-        } else {
-            onResult(null, result.exceptionOrNull()?.message ?: "알 수 없는 오류")
         }
     }
 }

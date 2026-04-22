@@ -86,9 +86,27 @@ object ApiService {
         allowBasic = allowBasic,
     )
 
+    fun getLatestChapter(
+        token: String,
+        sessionId: String,
+        questionNo: Int? = null,
+    ): Result<GeneratedChapterData?> = ChapterBookApi.getLatestChapter(
+        token = token,
+        sessionId = sessionId,
+        questionNo = questionNo,
+    )
+
     // ── Chapters / Books ─────────────────────────────
-    fun listChapters(token: String, sessionId: String? = null): Result<List<ChapterDraftData>> =
-        ChapterBookApi.listChapters(token, sessionId)
+    fun listChapters(
+        token: String,
+        sessionId: String? = null,
+        questionNo: Int? = null,
+        latestOnly: Boolean = false,
+    ): Result<List<ChapterDraftData>> =
+        ChapterBookApi.listChapters(token, sessionId, questionNo, latestOnly)
+
+    fun deleteChapter(token: String, chapterId: String): Result<Unit> =
+        ChapterBookApi.deleteChapter(token, chapterId)
 
     fun compileBook(
         token: String,
@@ -96,12 +114,33 @@ object ApiService {
         title: String,
     ): Result<BookDetailData> = ChapterBookApi.compileBook(token, chapterIds, title)
 
+    fun createAutobiography(
+        token: String,
+        sessionId: String,
+        chapterIds: List<String>,
+        title: String,
+    ): Result<AutobiographyCreateData> = ChapterBookApi.createAutobiography(token, sessionId, chapterIds, title)
+
+    fun getBookDetail(token: String, bookId: String): Result<BookDetailData> =
+        ChapterBookApi.getBookDetail(token, bookId)
+
+    fun getSharedBookDetail(token: String, bookId: String): Result<BookDetailData> =
+        ChapterBookApi.getSharedBookDetail(token, bookId)
+
+    fun shareBookToFeed(token: String, bookId: String): Result<BookShareResultData> =
+        ChapterBookApi.shareBookToFeed(token, bookId)
+
     fun createFeedPost(
         token: String,
         bookId: String,
         title: String,
         preview: String,
     ): Result<FeedPost> = FeedApi.createFeedPost(token, bookId, title, preview)
+
+    fun createChapterFeedPost(
+        token: String,
+        chapterId: String,
+    ): Result<FeedPost> = FeedApi.createChapterFeedPost(token, chapterId)
 
     // ── Feed ─────────────────────────────────────────
     fun getFeed(token: String, limit: Int = 20, offset: Int = 0): Result<List<FeedPost>> =
@@ -213,6 +252,8 @@ data class InterviewPromptData(
     val currentQuestionAnswerCount: Int = 0,
     val currentQuestionStoryReady: Boolean = false,
     val currentQuestionStoryQuality: String = "none",
+    val currentQuestionCompleted: Boolean = false,
+    val currentQuestionCanMoveNext: Boolean = false,
     val storyTargetQuestionNo: Int? = null,
     val storyTargetHasAnswer: Boolean = false,
     val storyTargetAnswerCount: Int = 0,
@@ -248,13 +289,33 @@ data class ChatMessageData(
 data class ChapterDraftData(
     val id: String,
     val title: String,
-    val content: String,
+    val preview: String,
     val chapterType: String,
     val createdAt: String,
+    val sourceQuestionNo: Int? = null,
 )
 
 data class BookDetailData(
     val id: String,
     val title: String,
     val subtitle: String?,
+    val chapters: List<BookChapterPayloadData> = emptyList(),
+    val shared: Boolean = false,
+    val sharedPostId: String? = null,
+)
+
+data class AutobiographyCreateData(
+    val bookId: String,
+)
+
+data class BookShareResultData(
+    val bookId: String,
+    val postId: String,
+)
+
+data class BookChapterPayloadData(
+    val id: String,
+    val title: String,
+    val content: String,
+    val sourceQuestionNo: Int? = null,
 )

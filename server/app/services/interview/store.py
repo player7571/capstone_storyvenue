@@ -9,6 +9,7 @@ from app.services.interview.state import (
     get_question_answer_count,
     get_question_answers,
     get_question_story_quality,
+    is_question_story_generatable,
     is_question_story_ready,
     merge_story_qualities,
 )
@@ -107,7 +108,7 @@ def load_voice_interview_state_from_store(session_id: UUID) -> VoiceInterviewSta
         get_supabase()
         .table(QUESTION_STATE_TABLE)
         .select(
-            "question_no, status, story_quality, follow_up_count, last_follow_up_question, "
+            "question_no, status, story_quality, story_ready, follow_up_count, last_follow_up_question, "
             "last_decision, last_reason_code, total_score, required_slot_hits, "
             "last_selected_missing_slot, last_pass_route"
         )
@@ -130,6 +131,7 @@ def load_voice_interview_state_from_store(session_id: UUID) -> VoiceInterviewSta
 
     grouped_answers: dict[str, list[str]] = defaultdict(list)
     question_story_qualities: dict[str, str] = {}
+    question_story_ready_flags: dict[str, bool] = {}
     question_statuses: dict[str, str] = {}
     for row in answer_rows:
         try:
@@ -151,6 +153,8 @@ def load_voice_interview_state_from_store(session_id: UUID) -> VoiceInterviewSta
         story_quality = str(row.get("story_quality") or "").strip().lower()
         if story_quality and story_quality != "none":
             question_story_qualities[key] = story_quality
+        if bool(row.get("story_ready") or False):
+            question_story_ready_flags[key] = True
         question_status = str(row.get("status") or "").strip().lower()
         if question_status:
             question_statuses[key] = question_status
@@ -166,6 +170,7 @@ def load_voice_interview_state_from_store(session_id: UUID) -> VoiceInterviewSta
         question_answers=dict(grouped_answers),
         question_statuses=question_statuses,
         question_story_qualities=question_story_qualities,
+        question_story_ready_flags=question_story_ready_flags,
         question_bank_version=question_bank_version,
         is_interview_complete=is_interview_complete,
         last_decision=current_row.get("last_decision") or None,
@@ -224,12 +229,17 @@ def save_voice_interview_state_to_store(session_id: UUID, state: VoiceInterviewS
     existing_rows = (
         get_supabase()
         .table(QUESTION_STATE_TABLE)
-        .select("question_no, story_quality")
+        .select("question_no, story_quality, story_ready")
         .eq("session_id", str(session_id))
         .execute()
     ).data or []
     existing_story_quality_by_question = {
         int(row.get("question_no") or 0): str(row.get("story_quality") or "").strip().lower()
+        for row in existing_rows
+        if int(row.get("question_no") or 0) > 0
+    }
+    existing_story_ready_by_question = {
+        int(row.get("question_no") or 0): bool(row.get("story_ready") or False)
         for row in existing_rows
         if int(row.get("question_no") or 0) > 0
     }
@@ -241,6 +251,10 @@ def save_voice_interview_state_to_store(session_id: UUID, state: VoiceInterviewS
         computed_story_quality = get_question_story_quality(state, question_no)
         persisted_story_quality = existing_story_quality_by_question.get(question_no)
         story_quality = merge_story_qualities(persisted_story_quality, computed_story_quality)
+        story_ready = (
+            existing_story_ready_by_question.get(question_no, False)
+            or is_question_story_generatable(state, question_no)
+        )
         rows.append(
             {
                 "session_id": str(session_id),
@@ -257,7 +271,7 @@ def save_voice_interview_state_to_store(session_id: UUID, state: VoiceInterviewS
                 "last_follow_up_question": state.last_follow_up_question if question_no == state.current_question_no else None,
                 "aggregated_answer_text": "\n".join(answers),
                 "has_answer": bool(answers),
-                "story_ready": story_quality in {"basic", "ready"},
+                "story_ready": story_ready,
                 "story_quality": story_quality,
                 "answer_count": answer_count,
                 "last_answered_at": datetime.now(timezone.utc).isoformat() if answer_count > 0 else None,

@@ -64,6 +64,7 @@ import kotlinx.coroutines.withContext
 
 data class FeedPost(
     val id: String,
+    val bookId: String? = null,
     val authorId: String = "",
     val authorName: String,
     val authorAvatarUrl: String? = null,
@@ -275,6 +276,7 @@ fun FeedDetailScreen(
     val scope = rememberCoroutineScope()
 
     var post by remember { mutableStateOf<FeedPost?>(null) }
+    var sharedBook by remember { mutableStateOf<BookDetailData?>(null) }
     var liked by remember { mutableStateOf(false) }
     var likeCount by remember { mutableStateOf(0) }
     var commentText by remember { mutableStateOf("") }
@@ -282,11 +284,18 @@ fun FeedDetailScreen(
     var isLoading by remember { mutableStateOf(true) }
 
     LaunchedEffect(postId) {
+        sharedBook = null
         withContext(Dispatchers.IO) {
             ApiService.getFeedDetail(token, postId).onSuccess {
                 post = it
                 liked = it.likedByMe
                 likeCount = it.likeCount
+                val currentBookId = it.bookId
+                if (!currentBookId.isNullOrBlank()) {
+                    ApiService.getSharedBookDetail(token, currentBookId).onSuccess { detail ->
+                        sharedBook = detail
+                    }
+                }
             }
             ApiService.getComments(token, postId).onSuccess {
                 comments.clear()
@@ -368,14 +377,60 @@ fun FeedDetailScreen(
                         colors = CardDefaults.cardColors(containerColor = StoryVenueColors.Surface),
                         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                     ) {
-                        Text(
-                            text = post!!.preview,
-                            fontSize = 17.sp,
-                            color = StoryVenueColors.OnSurface,
-                            fontFamily = SBAggroFamily,
-                            lineHeight = 28.sp,
-                            modifier = Modifier.padding(20.dp),
-                        )
+                        val currentBook = sharedBook
+                        if (currentBook != null) {
+                            Column(modifier = Modifier.padding(20.dp)) {
+                                currentBook.subtitle?.takeIf { it.isNotBlank() }?.let { subtitle ->
+                                    Text(
+                                        text = subtitle,
+                                        fontSize = 16.sp,
+                                        color = StoryVenueColors.SubText,
+                                        fontFamily = SBAggroFamily,
+                                        lineHeight = 26.sp,
+                                    )
+                                    Spacer(Modifier.height(12.dp))
+                                }
+                                currentBook.chapters
+                                    .sortedBy { it.sourceQuestionNo ?: Int.MAX_VALUE }
+                                    .forEachIndexed { index, chapter ->
+                                        Text(
+                                            text = chapter.sourceQuestionNo?.let { "이야기 $it" } ?: "자유 이야기",
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = StoryVenueColors.SubText,
+                                            fontFamily = SBAggroFamily,
+                                        )
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            text = chapter.title,
+                                            fontSize = 19.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = StoryVenueColors.OnSurface,
+                                            fontFamily = SBAggroFamily,
+                                        )
+                                        Spacer(Modifier.height(10.dp))
+                                        Text(
+                                            text = chapter.content,
+                                            fontSize = 17.sp,
+                                            color = StoryVenueColors.OnSurface,
+                                            fontFamily = SBAggroFamily,
+                                            lineHeight = 28.sp,
+                                        )
+                                        if (index < currentBook.chapters.lastIndex) {
+                                            Spacer(Modifier.height(20.dp))
+                                        }
+                                    }
+                            }
+                        } else {
+                            Text(
+                                text = post!!.preview,
+                                fontSize = 17.sp,
+                                color = StoryVenueColors.OnSurface,
+                                fontFamily = SBAggroFamily,
+                                lineHeight = 28.sp,
+                                modifier = Modifier.padding(20.dp),
+                            )
+                        }
                     }
                     Spacer(Modifier.height(16.dp))
                     Row(
