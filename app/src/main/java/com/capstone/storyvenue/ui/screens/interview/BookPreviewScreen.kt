@@ -60,7 +60,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -80,7 +79,6 @@ data class BookChapter(
     val sourceQuestionNo: Int?,
     val title: String,
     val preview: String,
-    val content: String,
     val createdAt: String,
     val isLatest: Boolean,
     val historyIndex: Int? = null,
@@ -90,13 +88,7 @@ private data class BookQuestionGroup(
     val key: String,
     val sourceQuestionNo: Int?,
     val activeChapter: BookChapter,
-    val previousChapters: List<BookChapter>,
 )
-
-private fun buildPreview(content: String): String {
-    val trimmed = content.trim().replace(Regex("\\s+"), " ")
-    return if (trimmed.length <= 120) trimmed else trimmed.take(120) + " ..."
-}
 
 private fun buildQuestionLabel(sourceQuestionNo: Int?): String =
     sourceQuestionNo?.let { "이야기 $it" } ?: "자유 이야기"
@@ -135,8 +127,7 @@ private fun buildQuestionGroups(drafts: List<ChapterDraftData>): List<BookQuesti
                         id = draft.id,
                         sourceQuestionNo = draft.sourceQuestionNo,
                         title = draft.title.ifBlank { "제목 없는 이야기" },
-                        preview = buildPreview(draft.content),
-                        content = draft.content,
+                        preview = draft.preview,
                         createdAt = draft.createdAt,
                         isLatest = index == 0,
                         historyIndex = if (index == 0) null else index,
@@ -149,7 +140,6 @@ private fun buildQuestionGroups(drafts: List<ChapterDraftData>): List<BookQuesti
                     key = buildGroupKey(sourceQuestionNo),
                     sourceQuestionNo = sourceQuestionNo,
                     activeChapter = versions.first(),
-                    previousChapters = versions.drop(1),
                 )
             }
         }
@@ -176,6 +166,8 @@ fun BookPreviewScreen(
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var expandedGroupKey by remember { mutableStateOf<String?>(null) }
     val showPreviousDraftsByGroup = remember { mutableStateMapOf<String, Boolean>() }
+    val previousDraftsByGroup = remember { mutableStateMapOf<String, List<BookChapter>>() }
+    val loadingPreviousDraftsByGroup = remember { mutableStateMapOf<String, Boolean>() }
     var isPublishing by remember { mutableStateOf(false) }
     var deletingChapterId by remember { mutableStateOf<String?>(null) }
     var postingChapterId by remember { mutableStateOf<String?>(null) }
@@ -198,12 +190,26 @@ fun BookPreviewScreen(
             return
         }
 
-        val result = withContext(Dispatchers.IO) { ApiService.listChapters(token, sessionId) }
+        val result = withContext(Dispatchers.IO) {
+            ApiService.listChapters(
+                token = token,
+                sessionId = sessionId,
+                latestOnly = true,
+            )
+        }
         if (result.isSuccess) {
             val groups = buildQuestionGroups(result.getOrNull().orEmpty())
             questionGroups = groups
             if (groups.none { it.key == expandedGroupKey }) {
                 expandedGroupKey = null
+            }
+            val validKeys = groups.map { it.key }.toSet()
+            previousDraftsByGroup.keys.toList().forEach { key ->
+                if (key !in validKeys) {
+                    previousDraftsByGroup.remove(key)
+                    loadingPreviousDraftsByGroup.remove(key)
+                    showPreviousDraftsByGroup.remove(key)
+                }
             }
             errorMsg = null
         } else {
@@ -213,6 +219,46 @@ fun BookPreviewScreen(
     }
 
     LaunchedEffect(sessionId) { loadChapters() }
+
+    fun loadPreviousDrafts(group: BookQuestionGroup) {
+        val questionNo = group.sourceQuestionNo ?: return
+        if (loadingPreviousDraftsByGroup[group.key] == true) return
+        loadingPreviousDraftsByGroup[group.key] = true
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                ApiService.listChapters(
+                    token = token,
+                    sessionId = sessionId,
+                    questionNo = questionNo,
+                    latestOnly = false,
+                )
+            }
+            loadingPreviousDraftsByGroup[group.key] = false
+            if (result.isSuccess) {
+                val previous = result.getOrNull().orEmpty()
+                    .sortedByDescending { it.createdAt }
+                    .drop(1)
+                    .mapIndexed { index, draft ->
+                        BookChapter(
+                            id = draft.id,
+                            sourceQuestionNo = draft.sourceQuestionNo,
+                            title = draft.title.ifBlank { "제목 없는 이야기" },
+                            preview = draft.preview,
+                            createdAt = draft.createdAt,
+                            isLatest = false,
+                            historyIndex = index + 1,
+                        )
+                    }
+                previousDraftsByGroup[group.key] = previous
+            } else {
+                Toast.makeText(
+                    context,
+                    result.exceptionOrNull()?.message ?: "이전 초안을 불러오지 못했습니다.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
 
     fun createAutobiography() {
         if (isPublishing) return
@@ -264,6 +310,9 @@ fun BookPreviewScreen(
             deletingChapterId = null
             if (result.isSuccess) {
                 expandedGroupKey = null
+                previousDraftsByGroup.clear()
+                loadingPreviousDraftsByGroup.clear()
+                showPreviousDraftsByGroup.clear()
                 isLoading = true
                 errorMsg = null
                 loadChapters()
@@ -286,38 +335,10 @@ fun BookPreviewScreen(
         if (postingChapterId != null || deletingChapterId != null || isPublishing) return
         postingChapterId = chapter.id
         scope.launch {
-            val compileResult = withContext(Dispatchers.IO) {
-                ApiService.compileBook(
-                    token = token,
-                    chapterIds = listOf(chapter.id),
-                    title = chapter.title,
-                )
-            }
-            if (compileResult.isFailure) {
-                postingChapterId = null
-                Toast.makeText(
-                    context,
-                    compileResult.exceptionOrNull()?.message ?: "초안 책 만들기에 실패했습니다.",
-                    Toast.LENGTH_SHORT
-                ).show()
-                return@launch
-            }
-
-            val book = compileResult.getOrNull()!!
-            val preview = buildString {
-                append(buildQuestionLabel(chapter.sourceQuestionNo))
-                append(" : ")
-                append(chapter.title)
-                append("\n")
-                append(chapter.content)
-            }
-
             val result = withContext(Dispatchers.IO) {
-                ApiService.createFeedPost(
+                ApiService.createChapterFeedPost(
                     token = token,
-                    bookId = book.id,
-                    title = book.title,
-                    preview = preview,
+                    chapterId = chapter.id,
                 )
             }
             postingChapterId = null
@@ -408,8 +429,13 @@ fun BookPreviewScreen(
                                     Log.d("BookPreview", "초안 게시: ${chapter.title} (${chapter.id})")
                                     postChapter(chapter)
                                 },
+                                previousChapters = previousDraftsByGroup[group.key].orEmpty(),
+                                isLoadingPreviousDrafts = loadingPreviousDraftsByGroup[group.key] == true,
                                 onTogglePreviousDrafts = {
                                     val current = showPreviousDraftsByGroup[group.key] == true
+                                    if (!current && previousDraftsByGroup[group.key] == null) {
+                                        loadPreviousDrafts(group)
+                                    }
                                     showPreviousDraftsByGroup[group.key] = !current
                                 },
                                 onOpenPreviousClick = { chapter ->
@@ -510,52 +536,14 @@ fun BookPreviewScreen(
 }
 
 @Composable
-private fun CenteredLoading() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator(color = StoryVenueColors.Primary)
-    }
-}
-
-@Composable
-private fun CenteredError(message: String, onRetry: () -> Unit) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = message,
-                color = StoryVenueColors.Error,
-                fontSize = 16.sp,
-                textAlign = TextAlign.Center,
-            )
-            TextButton(onClick = onRetry) {
-                Text("다시 시도", color = StoryVenueColors.Primary)
-            }
-        }
-    }
-}
-
-@Composable
-private fun CenteredMessage(message: String) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = message,
-            color = StoryVenueColors.SubText,
-            fontSize = 16.sp,
-            textAlign = TextAlign.Center,
-            lineHeight = 24.sp,
-        )
-    }
-}
-
-@Composable
 private fun QuestionGroupCard(
     group: BookQuestionGroup,
     isExpanded: Boolean,
     showPreviousDrafts: Boolean,
     deletingChapterId: String?,
     postingChapterId: String?,
+    previousChapters: List<BookChapter>,
+    isLoadingPreviousDrafts: Boolean,
     onToggle: () -> Unit,
     onOpenActiveClick: () -> Unit,
     onDeleteChapter: (BookChapter) -> Unit,
@@ -696,7 +684,7 @@ private fun QuestionGroupCard(
                         }
                     }
 
-                    if (group.previousChapters.isNotEmpty()) {
+                    if (group.sourceQuestionNo != null) {
                         Spacer(Modifier.height(16.dp))
                         TextButton(
                             onClick = onTogglePreviousDrafts,
@@ -706,7 +694,11 @@ private fun QuestionGroupCard(
                                 text = if (showPreviousDrafts) {
                                     "이전 초안 접기"
                                 } else {
-                                    "이전 초안 ${group.previousChapters.size}개 보기"
+                                    when {
+                                        isLoadingPreviousDrafts -> "이전 초안 불러오는 중..."
+                                        previousChapters.isNotEmpty() -> "이전 초안 ${previousChapters.size}개 보기"
+                                        else -> "이전 초안 보기"
+                                    }
                                 },
                                 color = StoryVenueColors.Primary,
                                 fontSize = 14.sp,
@@ -721,15 +713,29 @@ private fun QuestionGroupCard(
                         ) {
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Spacer(Modifier.height(4.dp))
-                                group.previousChapters.forEach { chapter ->
-                                    PreviousDraftRow(
-                                        chapter = chapter,
-                                        isDeleting = deletingChapterId == chapter.id,
-                                        isPosting = postingChapterId == chapter.id,
-                                        onOpenClick = { onOpenPreviousClick(chapter) },
-                                        onDeleteClick = { onDeleteChapter(chapter) },
-                                        onPostClick = { onPostChapter(chapter) },
+                                if (isLoadingPreviousDrafts) {
+                                    CircularProgressIndicator(
+                                        color = StoryVenueColors.Primary,
+                                        strokeWidth = 2.dp,
+                                        modifier = Modifier.size(20.dp),
                                     )
+                                } else if (previousChapters.isEmpty()) {
+                                    Text(
+                                        text = "이전 초안이 없어요.",
+                                        fontSize = 14.sp,
+                                        color = StoryVenueColors.SubText,
+                                    )
+                                } else {
+                                    previousChapters.forEach { chapter ->
+                                        PreviousDraftRow(
+                                            chapter = chapter,
+                                            isDeleting = deletingChapterId == chapter.id,
+                                            isPosting = postingChapterId == chapter.id,
+                                            onOpenClick = { onOpenPreviousClick(chapter) },
+                                            onDeleteClick = { onDeleteChapter(chapter) },
+                                            onPostClick = { onPostChapter(chapter) },
+                                        )
+                                    }
                                 }
                             }
                         }

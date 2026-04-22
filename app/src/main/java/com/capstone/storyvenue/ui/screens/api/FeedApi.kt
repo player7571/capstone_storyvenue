@@ -6,6 +6,7 @@ import org.json.JSONObject
 object FeedApi {
     private fun parseFeedPost(obj: JSONObject): FeedPost = FeedPost(
         id = obj.getString("id"),
+        bookId = obj.optCleanString("book_id").ifBlank { null },
         authorId = obj.optString("user_id", ""),
         authorName = obj.optString("author_name", "익명"),
         authorAvatarUrl = obj.optCleanString("author_avatar_url").ifBlank { null },
@@ -56,6 +57,25 @@ object FeedApi {
                 Result.success(parseFeedPost(JSONObject(body)))
             } else {
                 Result.failure(Exception(parseErrorMessage(body, "게시 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun createChapterFeedPost(
+        token: String,
+        chapterId: String,
+    ): Result<FeedPost> {
+        return try {
+            val response = apiClient.newCall(
+                authPost("$API_BASE_URL/feed/chapter/$chapterId", token)
+            ).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                Result.success(parseFeedPost(JSONObject(body)))
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "초안 게시 실패")))
             }
         } catch (e: Exception) {
             Result.failure(e)

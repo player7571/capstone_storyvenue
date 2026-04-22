@@ -64,6 +64,36 @@ def _build_post_response(
     return FeedPostResponse(**merged)
 
 
+def _build_chapter_feed_preview(title: str, content: str, limit: int = 220) -> str:
+    seed = f"{title}\n{content}".strip()
+    normalized = " ".join(seed.split())
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[:limit].rstrip() + " ..."
+
+
+def _load_owned_chapter_or_404(chapter_id: UUID, user_id: str) -> dict:
+    result = (
+        get_supabase()
+        .table("chapter_drafts")
+        .select("id, session_id, source_question_no, title, content")
+        .eq("id", str(chapter_id))
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    if result is None or not getattr(result, "data", None):
+        raise HTTPException(status_code=404, detail="초안을 찾을 수 없습니다.")
+    row = result.data
+    return {
+        "id": str(row["id"]),
+        "session_id": str(row.get("session_id")),
+        "source_question_no": row.get("source_question_no"),
+        "title": str(row.get("title") or "").strip(),
+        "content": str(row.get("content") or "").strip(),
+    }
+
+
 # ── GET /feed ─────────────────────────────────────
 @router.get("", response_model=list[FeedPostResponse])
 async def list_feed(
@@ -112,6 +142,66 @@ async def create_feed_post(
         )
         .execute()
     )
+    data = row.data[0]
+    return FeedPostResponse(
+        **data,
+        author_name=None,
+        author_avatar_url=None,
+        comment_count=0,
+    )
+
+
+@router.post("/chapter/{chapter_id}", response_model=FeedPostResponse, status_code=status.HTTP_201_CREATED)
+async def create_chapter_feed_post(
+    chapter_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+):
+    chapter = _load_owned_chapter_or_404(chapter_id, user_id)
+    if not chapter["title"] or not chapter["content"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="제목과 본문이 있는 초안만 게시할 수 있습니다.",
+        )
+
+    preview = _build_chapter_feed_preview(chapter["title"], chapter["content"])
+    safety = check_content_safety(f"{chapter['title']}\n{preview}")
+    if not safety["safe"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"부적절한 콘텐츠가 감지되었습니다: {safety['reason']}",
+        )
+
+    sb = get_supabase()
+    book_row = (
+        sb.table("book_versions")
+        .insert(
+            {
+                "user_id": user_id,
+                "title": chapter["title"],
+                "subtitle": None,
+                "chapters": [chapter],
+            }
+        )
+        .execute()
+    )
+    book = book_row.data[0]
+
+    try:
+        row = (
+            sb.table("feed_posts")
+            .insert(
+                {
+                    "user_id": user_id,
+                    "book_id": str(book["id"]),
+                    "title": chapter["title"],
+                    "preview": preview,
+                }
+            )
+            .execute()
+        )
+    except Exception:
+        sb.table("book_versions").delete().eq("id", str(book["id"])).execute()
+        raise
     data = row.data[0]
     return FeedPostResponse(
         **data,

@@ -44,6 +44,16 @@ class SessionResponse(BaseModel):
     interview_state: InterviewStateResponse | None = None
 
 
+class SessionSummaryResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    title: str | None = None
+    theme: str | None = None
+    status: str | None = None
+    session_type: str | None = None
+    created_at: datetime
+
+
 class PhotoSessionStartResponse(BaseModel):
     session_id: UUID
     photo_url: str

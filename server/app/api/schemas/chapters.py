@@ -30,3 +30,16 @@ class ChapterResponse(BaseModel):
     version_no: int
     story_quality_at_generation: str | None = None
     created_at: datetime
+
+
+class ChapterSummaryResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    session_id: UUID
+    title: str
+    preview: str
+    chapter_type: ChapterType
+    source_question_no: int | None = None
+    version_no: int
+    story_quality_at_generation: str | None = None
+    created_at: datetime

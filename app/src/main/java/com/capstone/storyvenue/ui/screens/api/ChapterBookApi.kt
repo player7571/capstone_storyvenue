@@ -29,14 +29,10 @@ object ChapterBookApi {
             title = json.optString("title", ""),
             subtitle = json.optCleanString("subtitle").ifBlank { null },
             chapters = chapters,
+            shared = json.optBoolean("shared", false),
+            sharedPostId = json.optCleanString("shared_post_id").ifBlank { null },
         )
     }
-
-    private fun parseBookShareStatus(json: JSONObject): BookShareStatusData =
-        BookShareStatusData(
-            shared = json.optBoolean("shared", false),
-            postId = json.optCleanString("post_id").ifBlank { null },
-        )
 
     private fun parseBookShareResult(json: JSONObject): BookShareResultData =
         BookShareResultData(
@@ -135,12 +131,22 @@ object ChapterBookApi {
         }
     }
 
-    fun listChapters(token: String, sessionId: String? = null): Result<List<ChapterDraftData>> {
+    fun listChapters(
+        token: String,
+        sessionId: String? = null,
+        questionNo: Int? = null,
+        latestOnly: Boolean = false,
+    ): Result<List<ChapterDraftData>> {
         return try {
-            val url = if (sessionId.isNullOrBlank()) {
+            val params = buildList {
+                if (!sessionId.isNullOrBlank()) add("session_id=$sessionId")
+                if (questionNo != null) add("question_no=$questionNo")
+                if (latestOnly) add("latest_only=true")
+            }
+            val url = if (params.isEmpty()) {
                 "$API_BASE_URL/chapters"
             } else {
-                "$API_BASE_URL/chapters?session_id=$sessionId"
+                "$API_BASE_URL/chapters?${params.joinToString("&")}"
             }
             val response = apiClient.newCall(authGet(url, token)).execute()
             val body = response.body?.string() ?: ""
@@ -153,7 +159,7 @@ object ChapterBookApi {
                         ChapterDraftData(
                             id = obj.getString("id"),
                             title = obj.optString("title", ""),
-                            content = obj.optString("content", ""),
+                            preview = obj.optString("preview", ""),
                             chapterType = obj.optString("chapter_type", ""),
                             createdAt = obj.optString("created_at", ""),
                             sourceQuestionNo = if (obj.has("source_question_no") && !obj.isNull("source_question_no")) {
@@ -257,16 +263,16 @@ object ChapterBookApi {
         }
     }
 
-    fun getBookShareStatus(token: String, bookId: String): Result<BookShareStatusData> {
+    fun getSharedBookDetail(token: String, bookId: String): Result<BookDetailData> {
         return try {
             val response = apiClient.newCall(
-                authGet("$API_BASE_URL/book/$bookId/share-status", token)
+                authGet("$API_BASE_URL/book/$bookId/shared", token)
             ).execute()
             val body = response.body?.string() ?: ""
             if (response.isSuccessful) {
-                Result.success(parseBookShareStatus(JSONObject(body)))
+                Result.success(parseBookDetail(JSONObject(body)))
             } else {
-                Result.failure(Exception(parseErrorMessage(body, "공유 상태 조회 실패")))
+                Result.failure(Exception(parseErrorMessage(body, "공유 자서전 조회 실패")))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -292,29 +298,4 @@ object ChapterBookApi {
         }
     }
 
-    fun publishAutobiography(
-        token: String,
-        sessionId: String,
-        chapterIds: List<String>,
-        title: String,
-    ): Result<Unit> {
-        return try {
-            val payload = JSONObject().apply {
-                put("session_id", sessionId)
-                put("chapter_ids", JSONArray(chapterIds))
-                put("title", title)
-            }.toString()
-            val response = apiChapterClient.newCall(
-                authPost("$API_BASE_URL/book/autobiography/publish", token, payload)
-            ).execute()
-            val body = response.body?.string() ?: ""
-            if (response.isSuccessful) {
-                Result.success(Unit)
-            } else {
-                Result.failure(Exception(parseErrorMessage(body, "자서전 게시 실패")))
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
 }

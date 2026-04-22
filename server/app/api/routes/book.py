@@ -6,7 +6,6 @@ from app.api.dependencies.auth import get_current_user_id
 from app.api.schemas.book import (
     AutobiographyCreateRequest,
     AutobiographyCreateResponse,
-    AutobiographyPublishResponse,
     BookShareResponse,
     BookShareStatusResponse,
     BookCompileRequest,
@@ -24,6 +23,18 @@ def _normalize_book_row(row: dict) -> dict:
     normalized = dict(row)
     normalized["chapters"] = normalized.get("chapters") or []
     return normalized
+
+
+def _build_book_detail_response(
+    row: dict,
+    *,
+    shared: bool = False,
+    shared_post_id: str | None = None,
+) -> BookDetailResponse:
+    normalized = _normalize_book_row(row)
+    normalized["shared"] = shared
+    normalized["shared_post_id"] = shared_post_id
+    return BookDetailResponse(**normalized)
 
 
 def _get_book_or_404(book_id: UUID, user_id: str) -> dict:
@@ -57,6 +68,18 @@ def _get_shared_post_for_book(book_id: UUID, user_id: str) -> dict | None:
     )
     rows = result.data or []
     return rows[0] if rows else None
+
+
+def _book_is_shared(book_id: UUID) -> bool:
+    result = (
+        get_supabase()
+        .table("feed_posts")
+        .select("id")
+        .eq("book_id", str(book_id))
+        .limit(1)
+        .execute()
+    )
+    return bool(result.data)
 
 
 def _load_owned_chapters(chapter_id_values: list[str], user_id: str) -> dict[str, dict]:
@@ -121,20 +144,25 @@ def _validate_autobiography_chapters(
     return sorted(ordered_chapters, key=lambda chapter: int(chapter["source_question_no"]))
 
 
-def _build_book_preview(subtitle: str | None, chapters: list[dict]) -> str:
+def _build_feed_preview(subtitle: str | None, chapters: list[dict], limit: int = 220) -> str:
     subtitle_line = (subtitle or "").strip()
-    chapters_block = "\n\n".join(
-        (
-            f"이야기 {int(chapter['source_question_no'])} : {str(chapter['title']).strip()}\n"
-            f"{str(chapter['content']).strip()}"
+    first_chapter = chapters[0] if chapters else None
+    first_title = str(first_chapter.get("title", "")).strip() if first_chapter else ""
+    first_content = str(first_chapter.get("content", "")).strip() if first_chapter else ""
+
+    seed = "\n\n".join(
+        part
+        for part in (
+            subtitle_line,
+            f"{first_title}\n{first_content}".strip() if first_title or first_content else "",
         )
-        for chapter in chapters
+        if part
     ).strip()
-    if subtitle_line and chapters_block:
-        return f"{subtitle_line}\n\n{chapters_block}"
-    if subtitle_line:
-        return subtitle_line
-    return chapters_block
+
+    normalized = " ".join(seed.split())
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[:limit].rstrip() + " ..."
 
 
 def _create_book_version(user_id: str, title: str, subtitle: str | None, chapters: list[dict]) -> dict:
@@ -269,7 +297,7 @@ async def compile_book(
             detail=f"책 저장 중 오류가 발생했습니다: {exc}",
         ) from exc
 
-    return BookDetailResponse(**_normalize_book_row(created.data[0]))
+    return _build_book_detail_response(created.data[0])
 
 
 @router.post(
@@ -285,54 +313,6 @@ async def create_autobiography(
     return AutobiographyCreateResponse(book_id=created["id"])
 
 
-@router.post(
-    "/autobiography/publish",
-    response_model=AutobiographyPublishResponse,
-    status_code=status.HTTP_201_CREATED,
-)
-async def publish_autobiography(
-    body: AutobiographyCreateRequest,
-    user_id: str = Depends(get_current_user_id),
-):
-    created_book = _generate_and_store_autobiography(body, user_id)
-    preview = _build_book_preview(
-        subtitle=created_book.get("subtitle"),
-        chapters=created_book.get("chapters") or [],
-    )
-
-    safety = check_content_safety(f"{created_book.get('title', '')}\n{preview}")
-    if not safety["safe"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"부적절한 콘텐츠가 감지되었습니다: {safety['reason']}",
-        )
-
-    try:
-        created_post = (
-            get_supabase()
-            .table("feed_posts")
-            .insert(
-                {
-                    "user_id": user_id,
-                    "book_id": str(created_book["id"]),
-                    "title": created_book["title"],
-                    "preview": preview,
-                }
-            )
-            .execute()
-        )
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"피드 게시 중 오류가 발생했습니다: {exc}",
-        ) from exc
-
-    return AutobiographyPublishResponse(
-        book_id=created_book["id"],
-        post_id=created_post.data[0]["id"],
-    )
-
-
 @router.get("/{book_id}/share-status", response_model=BookShareStatusResponse)
 async def get_book_share_status(
     book_id: UUID,
@@ -346,6 +326,33 @@ async def get_book_share_status(
         shared=True,
         post_id=shared_post["id"],
     )
+
+
+@router.get("/{book_id}/shared", response_model=BookDetailResponse)
+async def get_shared_book(
+    book_id: UUID,
+    _: str = Depends(get_current_user_id),
+):
+    if not _book_is_shared(book_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="공유된 자서전을 찾을 수 없습니다.",
+        )
+
+    result = (
+        get_supabase()
+        .table("book_versions")
+        .select("*")
+        .eq("id", str(book_id))
+        .maybe_single()
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="공유된 자서전을 찾을 수 없습니다.",
+        )
+    return _build_book_detail_response(result.data, shared=True)
 
 
 @router.post(
@@ -365,7 +372,7 @@ async def share_book(
             detail="이미 공유된 자서전입니다.",
         )
 
-    preview = _build_book_preview(
+    preview = _build_feed_preview(
         subtitle=book.get("subtitle"),
         chapters=book.get("chapters") or [],
     )
@@ -420,4 +427,10 @@ async def get_book(
     book_id: UUID,
     user_id: str = Depends(get_current_user_id),
 ):
-    return BookDetailResponse(**_get_book_or_404(book_id, user_id))
+    book = _get_book_or_404(book_id, user_id)
+    shared_post = _get_shared_post_for_book(book_id, user_id)
+    return _build_book_detail_response(
+        book,
+        shared=shared_post is not None,
+        shared_post_id=shared_post["id"] if shared_post else None,
+    )

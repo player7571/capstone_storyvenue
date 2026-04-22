@@ -97,8 +97,13 @@ object ApiService {
     )
 
     // ── Chapters / Books ─────────────────────────────
-    fun listChapters(token: String, sessionId: String? = null): Result<List<ChapterDraftData>> =
-        ChapterBookApi.listChapters(token, sessionId)
+    fun listChapters(
+        token: String,
+        sessionId: String? = null,
+        questionNo: Int? = null,
+        latestOnly: Boolean = false,
+    ): Result<List<ChapterDraftData>> =
+        ChapterBookApi.listChapters(token, sessionId, questionNo, latestOnly)
 
     fun deleteChapter(token: String, chapterId: String): Result<Unit> =
         ChapterBookApi.deleteChapter(token, chapterId)
@@ -119,8 +124,8 @@ object ApiService {
     fun getBookDetail(token: String, bookId: String): Result<BookDetailData> =
         ChapterBookApi.getBookDetail(token, bookId)
 
-    fun getBookShareStatus(token: String, bookId: String): Result<BookShareStatusData> =
-        ChapterBookApi.getBookShareStatus(token, bookId)
+    fun getSharedBookDetail(token: String, bookId: String): Result<BookDetailData> =
+        ChapterBookApi.getSharedBookDetail(token, bookId)
 
     fun shareBookToFeed(token: String, bookId: String): Result<BookShareResultData> =
         ChapterBookApi.shareBookToFeed(token, bookId)
@@ -131,6 +136,11 @@ object ApiService {
         title: String,
         preview: String,
     ): Result<FeedPost> = FeedApi.createFeedPost(token, bookId, title, preview)
+
+    fun createChapterFeedPost(
+        token: String,
+        chapterId: String,
+    ): Result<FeedPost> = FeedApi.createChapterFeedPost(token, chapterId)
 
     // ── Feed ─────────────────────────────────────────
     fun getFeed(token: String, limit: Int = 20, offset: Int = 0): Result<List<FeedPost>> =
@@ -279,7 +289,7 @@ data class ChatMessageData(
 data class ChapterDraftData(
     val id: String,
     val title: String,
-    val content: String,
+    val preview: String,
     val chapterType: String,
     val createdAt: String,
     val sourceQuestionNo: Int? = null,
@@ -290,15 +300,12 @@ data class BookDetailData(
     val title: String,
     val subtitle: String?,
     val chapters: List<BookChapterPayloadData> = emptyList(),
+    val shared: Boolean = false,
+    val sharedPostId: String? = null,
 )
 
 data class AutobiographyCreateData(
     val bookId: String,
-)
-
-data class BookShareStatusData(
-    val shared: Boolean,
-    val postId: String? = null,
 )
 
 data class BookShareResultData(

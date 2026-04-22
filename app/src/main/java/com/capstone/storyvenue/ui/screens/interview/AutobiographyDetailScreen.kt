@@ -27,7 +27,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -42,7 +41,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.capstone.storyvenue.ui.theme.StoryVenueColors
@@ -63,7 +61,6 @@ fun AutobiographyDetailScreen(
     val scope = rememberCoroutineScope()
 
     var book by remember { mutableStateOf<BookDetailData?>(null) }
-    var shareStatus by remember { mutableStateOf(BookShareStatusData(shared = false, postId = null)) }
     var isLoading by remember { mutableStateOf(true) }
     var isSharing by remember { mutableStateOf(false) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
@@ -80,9 +77,7 @@ fun AutobiographyDetailScreen(
             isLoading = false
             return
         }
-        val shareResult = withContext(Dispatchers.IO) { ApiService.getBookShareStatus(token, bookId) }
         book = bookResult.getOrNull()
-        shareStatus = shareResult.getOrNull() ?: BookShareStatusData(shared = false, postId = null)
         errorMsg = null
         isLoading = false
     }
@@ -90,7 +85,7 @@ fun AutobiographyDetailScreen(
     LaunchedEffect(bookId) { loadBook() }
 
     fun shareBook() {
-        if (isSharing || shareStatus.shared) return
+        if (isSharing || book?.shared == true) return
         isSharing = true
         scope.launch {
             val result = withContext(Dispatchers.IO) {
@@ -99,7 +94,7 @@ fun AutobiographyDetailScreen(
             isSharing = false
             if (result.isSuccess) {
                 val shared = result.getOrNull()!!
-                shareStatus = BookShareStatusData(shared = true, postId = shared.postId)
+                book = book?.copy(shared = true, sharedPostId = shared.postId)
                 Toast.makeText(context, "자서전을 공유했어요.", Toast.LENGTH_SHORT).show()
             } else {
                 Toast.makeText(
@@ -145,8 +140,8 @@ fun AutobiographyDetailScreen(
         ) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 when {
-                    isLoading -> DetailCenteredLoading()
-                    errorMsg != null -> DetailCenteredError(
+                    isLoading -> CenteredLoading()
+                    errorMsg != null -> CenteredError(
                         message = errorMsg!!,
                         onRetry = {
                             isLoading = true
@@ -154,7 +149,7 @@ fun AutobiographyDetailScreen(
                             scope.launch { loadBook() }
                         },
                     )
-                    book == null -> DetailCenteredMessage("자서전을 찾을 수 없어요.")
+                    book == null -> CenteredMessage("자서전을 찾을 수 없어요.")
                     else -> {
                         val currentBook = book!!
                         LazyColumn(
@@ -218,8 +213,9 @@ fun AutobiographyDetailScreen(
                     modifier = Modifier.padding(bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    val currentBook = book!!
                     Text(
-                        text = if (shareStatus.shared) {
+                        text = if (currentBook.shared) {
                             "이미 공유된 자서전입니다. 필요하면 피드에서 확인해보세요."
                         } else {
                             "자서전을 먼저 읽어보고, 마음에 들면 공유 버튼을 눌러 피드에 올려보세요."
@@ -231,7 +227,7 @@ fun AutobiographyDetailScreen(
 
                     Button(
                         onClick = { shareBook() },
-                        enabled = !isSharing && !shareStatus.shared,
+                        enabled = !isSharing && !currentBook.shared,
                         shape = RoundedCornerShape(50.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = StoryVenueColors.Primary,
@@ -251,16 +247,16 @@ fun AutobiographyDetailScreen(
                             )
                         } else {
                             Text(
-                                text = if (shareStatus.shared) "이미 공유됨" else "공유하기",
+                                text = if (currentBook.shared) "이미 공유됨" else "공유하기",
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.SemiBold,
                             )
                         }
                     }
 
-                    if (shareStatus.shared && !shareStatus.postId.isNullOrBlank()) {
+                    if (currentBook.shared && !currentBook.sharedPostId.isNullOrBlank()) {
                         OutlinedButton(
-                            onClick = { onOpenFeedPost(shareStatus.postId!!) },
+                            onClick = { onOpenFeedPost(currentBook.sharedPostId!!) },
                             shape = RoundedCornerShape(50.dp),
                             colors = ButtonDefaults.outlinedButtonColors(
                                 containerColor = StoryVenueColors.Surface,
@@ -281,44 +277,5 @@ fun AutobiographyDetailScreen(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun DetailCenteredLoading() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator(color = StoryVenueColors.Primary)
-    }
-}
-
-@Composable
-private fun DetailCenteredError(message: String, onRetry: () -> Unit) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = message,
-                color = StoryVenueColors.Error,
-                fontSize = 16.sp,
-                textAlign = TextAlign.Center,
-            )
-            TextButton(onClick = onRetry) {
-                Text("다시 시도", color = StoryVenueColors.Primary)
-            }
-        }
-    }
-}
-
-@Composable
-private fun DetailCenteredMessage(message: String) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = message,
-            color = StoryVenueColors.SubText,
-            fontSize = 16.sp,
-            textAlign = TextAlign.Center,
-        )
     }
 }

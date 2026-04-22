@@ -13,6 +13,7 @@ from app.api.schemas.sessions import (
     PhotoSessionStartResponse,
     SessionCreateRequest,
     SessionResponse,
+    SessionSummaryResponse,
 )
 from app.db.supabase import get_supabase
 from app.services import extract_memories
@@ -439,7 +440,7 @@ async def create_photo_session(
     )
 
 
-@router.get("", response_model=list[SessionResponse])
+@router.get("", response_model=list[SessionSummaryResponse])
 async def list_sessions(
     user_id: str = Depends(get_current_user_id),
 ):
@@ -448,13 +449,13 @@ async def list_sessions(
     try:
         result = (
             sb.table("interview_sessions")
-            .select("*")
+            .select("id, user_id, title, theme, status, session_type, created_at")
             .eq("user_id", user_id)
             .order("created_at", desc=True)
             .execute()
         )
         visible_rows = [row for row in (result.data or []) if not _is_deleted_session(row)]
-        return [SessionResponse(**row) for row in visible_rows]
+        return [SessionSummaryResponse(**row) for row in visible_rows]
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

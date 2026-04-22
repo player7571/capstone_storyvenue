@@ -19,11 +19,6 @@ class AutobiographyCreateResponse(BaseModel):
     book_id: UUID
 
 
-class AutobiographyPublishResponse(BaseModel):
-    book_id: UUID
-    post_id: UUID
-
-
 class BookShareResponse(BaseModel):
     book_id: UUID
     post_id: UUID
@@ -51,3 +46,5 @@ class BookSummaryResponse(BaseModel):
 class BookDetailResponse(BookSummaryResponse):
     user_id: UUID
     chapters: list[BookChapterPayload] = Field(default_factory=list)
+    shared: bool = False
+    shared_post_id: UUID | None = None

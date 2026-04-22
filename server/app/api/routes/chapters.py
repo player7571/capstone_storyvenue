@@ -6,6 +6,7 @@ from app.api.dependencies.auth import get_current_user_id
 from app.api.schemas.chapters import (
     ChapterGenerateRequest,
     ChapterResponse,
+    ChapterSummaryResponse,
     ChapterUpdateRequest,
 )
 from app.db.supabase import get_supabase
@@ -57,6 +58,13 @@ def _get_chapter_or_404(chapter_id: UUID, user_id: str) -> dict:
             detail="챕터를 찾을 수 없습니다.",
         )
     return result.data
+
+
+def _build_chapter_preview(content: str, limit: int = 120) -> str:
+    normalized = " ".join(str(content or "").strip().split())
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[:limit].rstrip() + " ..."
 
 
 def _load_legacy_conversation_history(session_id: UUID) -> list[dict[str, str]]:
@@ -294,9 +302,11 @@ async def generate_chapter(
     return ChapterResponse(**created.data[0])
 
 
-@router.get("", response_model=list[ChapterResponse])
+@router.get("", response_model=list[ChapterSummaryResponse])
 async def list_chapters(
     session_id: UUID | None = Query(default=None),
+    question_no: int | None = Query(default=None, ge=1, le=10),
+    latest_only: bool = Query(default=False),
     user_id: str = Depends(get_current_user_id),
 ):
     query = (
@@ -308,9 +318,29 @@ async def list_chapters(
     )
     if session_id is not None:
         query = query.eq("session_id", str(session_id))
+    if question_no is not None:
+        query = query.eq("source_question_no", question_no)
 
     result = query.execute()
-    return [ChapterResponse(**row) for row in result.data or []]
+    rows = result.data or []
+
+    if latest_only:
+        latest_rows_by_question: dict[int | None, dict] = {}
+        for row in rows:
+            key = row.get("source_question_no")
+            if key not in latest_rows_by_question:
+                latest_rows_by_question[key] = row
+        rows = list(latest_rows_by_question.values())
+
+    return [
+        ChapterSummaryResponse(
+            **{
+                **row,
+                "preview": _build_chapter_preview(str(row.get("content", ""))),
+            }
+        )
+        for row in rows
+    ]
 
 
 @router.get("/latest", response_model=ChapterResponse)
