@@ -8,6 +8,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.capstone.storyvenue.ui.screens.BookPreviewScreen
+import com.capstone.storyvenue.ui.screens.AutobiographyDetailScreen
 import com.capstone.storyvenue.ui.screens.ChapterDraftScreen
 import com.capstone.storyvenue.ui.screens.ChatListScreen
 import com.capstone.storyvenue.ui.screens.ChatRoomScreen
@@ -31,6 +32,7 @@ object Routes {
     const val VOICE_INTERVIEW = "voice_interview?sessionId={sessionId}"
     const val CHAPTER_DRAFT   = "chapter_draft/{sessionId}?questionNo={questionNo}&chapterType={chapterType}&allowBasic={allowBasic}&autoGenerate={autoGenerate}"
     const val BOOK_PREVIEW    = "book_preview/{sessionId}"
+    const val AUTOBIOGRAPHY_DETAIL = "autobiography_detail/{bookId}"
     const val FEED            = "feed"
     const val FEED_DETAIL     = "feed_detail/{postId}"
     const val CHAT_LIST       = "chat_list"
@@ -55,6 +57,7 @@ object Routes {
         return "chapter_draft/$sessionId?questionNo=$safeQuestionNo&chapterType=$safeChapterType&allowBasic=$allowBasic&autoGenerate=$autoGenerate"
     }
     fun bookPreview(sessionId: String) = "book_preview/$sessionId"
+    fun autobiographyDetail(bookId: String) = "autobiography_detail/$bookId"
 }
 
 @Composable
@@ -170,7 +173,27 @@ fun StoryVenueNavGraph(
                 sessionId = sessionId,
                 onBack = { navController.popBackStack() },
                 onAddChapter = { navController.navigate(Routes.voiceInterview(sessionId)) },
-                onPostToFeed = { navController.navigate(Routes.FEED) },
+                onAutobiographyCreated = { bookId ->
+                    navController.navigate(Routes.autobiographyDetail(bookId))
+                },
+                onPostToFeed = {
+                    navController.navigate(Routes.FEED)
+                },
+            )
+        }
+        composable(
+            route = Routes.AUTOBIOGRAPHY_DETAIL,
+            arguments = listOf(
+                navArgument("bookId") { type = NavType.StringType },
+            ),
+        ) { back ->
+            val bookId = back.arguments?.getString("bookId") ?: ""
+            AutobiographyDetailScreen(
+                bookId = bookId,
+                onBack = { navController.popBackStack() },
+                onOpenFeedPost = { postId ->
+                    navController.navigate(Routes.feedDetail(postId))
+                },
             )
         }
         composable(Routes.FEED) {

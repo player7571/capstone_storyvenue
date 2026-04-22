@@ -15,9 +15,23 @@ class AutobiographyCreateRequest(BaseModel):
     title: str = Field(min_length=1)
 
 
+class AutobiographyCreateResponse(BaseModel):
+    book_id: UUID
+
+
 class AutobiographyPublishResponse(BaseModel):
     book_id: UUID
     post_id: UUID
+
+
+class BookShareResponse(BaseModel):
+    book_id: UUID
+    post_id: UUID
+
+
+class BookShareStatusResponse(BaseModel):
+    shared: bool
+    post_id: UUID | None = None
 
 
 class BookChapterPayload(BaseModel):

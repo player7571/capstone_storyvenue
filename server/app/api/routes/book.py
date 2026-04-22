@@ -5,7 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.api.dependencies.auth import get_current_user_id
 from app.api.schemas.book import (
     AutobiographyCreateRequest,
+    AutobiographyCreateResponse,
     AutobiographyPublishResponse,
+    BookShareResponse,
+    BookShareStatusResponse,
     BookCompileRequest,
     BookDetailResponse,
     BookSummaryResponse,
@@ -39,6 +42,21 @@ def _get_book_or_404(book_id: UUID, user_id: str) -> dict:
             detail="책을 찾을 수 없습니다.",
         )
     return _normalize_book_row(result.data)
+
+
+def _get_shared_post_for_book(book_id: UUID, user_id: str) -> dict | None:
+    result = (
+        get_supabase()
+        .table("feed_posts")
+        .select("id, created_at")
+        .eq("book_id", str(book_id))
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    return rows[0] if rows else None
 
 
 def _load_owned_chapters(chapter_id_values: list[str], user_id: str) -> dict[str, dict]:
@@ -256,7 +274,7 @@ async def compile_book(
 
 @router.post(
     "/autobiography",
-    response_model=BookDetailResponse,
+    response_model=AutobiographyCreateResponse,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_autobiography(
@@ -264,7 +282,7 @@ async def create_autobiography(
     user_id: str = Depends(get_current_user_id),
 ):
     created = _generate_and_store_autobiography(body, user_id)
-    return BookDetailResponse(**created)
+    return AutobiographyCreateResponse(book_id=created["id"])
 
 
 @router.post(
@@ -311,6 +329,75 @@ async def publish_autobiography(
 
     return AutobiographyPublishResponse(
         book_id=created_book["id"],
+        post_id=created_post.data[0]["id"],
+    )
+
+
+@router.get("/{book_id}/share-status", response_model=BookShareStatusResponse)
+async def get_book_share_status(
+    book_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+):
+    _get_book_or_404(book_id, user_id)
+    shared_post = _get_shared_post_for_book(book_id, user_id)
+    if not shared_post:
+        return BookShareStatusResponse(shared=False, post_id=None)
+    return BookShareStatusResponse(
+        shared=True,
+        post_id=shared_post["id"],
+    )
+
+
+@router.post(
+    "/{book_id}/share",
+    response_model=BookShareResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def share_book(
+    book_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+):
+    book = _get_book_or_404(book_id, user_id)
+    shared_post = _get_shared_post_for_book(book_id, user_id)
+    if shared_post:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="이미 공유된 자서전입니다.",
+        )
+
+    preview = _build_book_preview(
+        subtitle=book.get("subtitle"),
+        chapters=book.get("chapters") or [],
+    )
+    safety = check_content_safety(f"{book.get('title', '')}\n{preview}")
+    if not safety["safe"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"부적절한 콘텐츠가 감지되었습니다: {safety['reason']}",
+        )
+
+    try:
+        created_post = (
+            get_supabase()
+            .table("feed_posts")
+            .insert(
+                {
+                    "user_id": user_id,
+                    "book_id": str(book["id"]),
+                    "title": book["title"],
+                    "preview": preview,
+                }
+            )
+            .execute()
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"피드 게시 중 오류가 발생했습니다: {exc}",
+        ) from exc
+
+    return BookShareResponse(
+        book_id=book["id"],
         post_id=created_post.data[0]["id"],
     )
 

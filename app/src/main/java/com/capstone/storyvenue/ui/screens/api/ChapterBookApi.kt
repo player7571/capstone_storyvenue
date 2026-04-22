@@ -32,6 +32,23 @@ object ChapterBookApi {
         )
     }
 
+    private fun parseBookShareStatus(json: JSONObject): BookShareStatusData =
+        BookShareStatusData(
+            shared = json.optBoolean("shared", false),
+            postId = json.optCleanString("post_id").ifBlank { null },
+        )
+
+    private fun parseBookShareResult(json: JSONObject): BookShareResultData =
+        BookShareResultData(
+            bookId = json.optString("book_id", ""),
+            postId = json.optString("post_id", ""),
+        )
+
+    private fun parseAutobiographyCreateResult(json: JSONObject): AutobiographyCreateData =
+        AutobiographyCreateData(
+            bookId = json.optString("book_id", ""),
+        )
+
     private fun parseGeneratedChapter(
         json: JSONObject,
         sessionId: String,
@@ -202,7 +219,7 @@ object ChapterBookApi {
         sessionId: String,
         chapterIds: List<String>,
         title: String,
-    ): Result<BookDetailData> {
+    ): Result<AutobiographyCreateData> {
         return try {
             val payload = JSONObject().apply {
                 put("session_id", sessionId)
@@ -215,9 +232,60 @@ object ChapterBookApi {
             val body = response.body?.string() ?: ""
             if (response.isSuccessful) {
                 val json = JSONObject(body)
-                Result.success(parseBookDetail(json))
+                Result.success(parseAutobiographyCreateResult(json))
             } else {
                 Result.failure(Exception(parseErrorMessage(body, "자서전 생성 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun getBookDetail(token: String, bookId: String): Result<BookDetailData> {
+        return try {
+            val response = apiClient.newCall(
+                authGet("$API_BASE_URL/book/$bookId", token)
+            ).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                Result.success(parseBookDetail(JSONObject(body)))
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "자서전 조회 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun getBookShareStatus(token: String, bookId: String): Result<BookShareStatusData> {
+        return try {
+            val response = apiClient.newCall(
+                authGet("$API_BASE_URL/book/$bookId/share-status", token)
+            ).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                Result.success(parseBookShareStatus(JSONObject(body)))
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "공유 상태 조회 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun shareBookToFeed(
+        token: String,
+        bookId: String,
+    ): Result<BookShareResultData> {
+        return try {
+            val response = apiClient.newCall(
+                authPost("$API_BASE_URL/book/$bookId/share", token)
+            ).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                Result.success(parseBookShareResult(JSONObject(body)))
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "자서전 공유 실패")))
             }
         } catch (e: Exception) {
             Result.failure(e)

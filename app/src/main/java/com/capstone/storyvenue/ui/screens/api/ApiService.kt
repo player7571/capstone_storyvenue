@@ -114,14 +114,16 @@ object ApiService {
         sessionId: String,
         chapterIds: List<String>,
         title: String,
-    ): Result<BookDetailData> = ChapterBookApi.createAutobiography(token, sessionId, chapterIds, title)
+    ): Result<AutobiographyCreateData> = ChapterBookApi.createAutobiography(token, sessionId, chapterIds, title)
 
-    fun publishAutobiography(
-        token: String,
-        sessionId: String,
-        chapterIds: List<String>,
-        title: String,
-    ): Result<Unit> = ChapterBookApi.publishAutobiography(token, sessionId, chapterIds, title)
+    fun getBookDetail(token: String, bookId: String): Result<BookDetailData> =
+        ChapterBookApi.getBookDetail(token, bookId)
+
+    fun getBookShareStatus(token: String, bookId: String): Result<BookShareStatusData> =
+        ChapterBookApi.getBookShareStatus(token, bookId)
+
+    fun shareBookToFeed(token: String, bookId: String): Result<BookShareResultData> =
+        ChapterBookApi.shareBookToFeed(token, bookId)
 
     fun createFeedPost(
         token: String,
@@ -288,6 +290,20 @@ data class BookDetailData(
     val title: String,
     val subtitle: String?,
     val chapters: List<BookChapterPayloadData> = emptyList(),
+)
+
+data class AutobiographyCreateData(
+    val bookId: String,
+)
+
+data class BookShareStatusData(
+    val shared: Boolean,
+    val postId: String? = null,
+)
+
+data class BookShareResultData(
+    val bookId: String,
+    val postId: String,
 )
 
 data class BookChapterPayloadData(

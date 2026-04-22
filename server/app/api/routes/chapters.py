@@ -135,24 +135,7 @@ def _load_voice_question_story_context(
 
     question = get_interview_question(question_no)
     current_answer_text = "\n".join(current_answers).strip()
-    history: list[dict[str, str]] = []
-
-    if question_no > 1:
-        previous_answers = get_question_answers(state, question_no - 1)
-        if previous_answers:
-            previous_question = get_interview_question(question_no - 1)
-            history.append(
-                {
-                    "role": "user",
-                    "content": (
-                        "[이전 질문 참고]\n"
-                        f"질문: {previous_question.main_question}\n"
-                        f"답변: {' '.join(previous_answers)}"
-                    ),
-                }
-            )
-
-    history.append(
+    history: list[dict[str, str]] = [
         {
             "role": "user",
             "content": (
@@ -161,8 +144,8 @@ def _load_voice_question_story_context(
                 f"힌트: {question.hint}\n"
                 f"답변: {current_answer_text}"
             ),
-        }
-    )
+        },
+    ]
 
     story_quality = get_question_story_quality(state, question_no)
     return history, current_answer_text, story_quality

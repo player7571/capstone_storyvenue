@@ -162,6 +162,7 @@ fun BookPreviewScreen(
     bookTitle: String = "나의 이야기",
     onBack: () -> Unit = {},
     onAddChapter: () -> Unit = {},
+    onAutobiographyCreated: (String) -> Unit = {},
     onPostToFeed: () -> Unit = {},
     onChapterClick: (BookChapter) -> Unit = {},
 ) {
@@ -213,7 +214,7 @@ fun BookPreviewScreen(
 
     LaunchedEffect(sessionId) { loadChapters() }
 
-    fun publish() {
+    fun createAutobiography() {
         if (isPublishing) return
         if (!canCreateAutobiography) {
             val missingText = if (missingStoryNumbers.isEmpty()) {
@@ -229,26 +230,27 @@ fun BookPreviewScreen(
         scope.launch {
             val ids = activeChapters.map { it.id }
 
-            val publishResult = withContext(Dispatchers.IO) {
-                ApiService.publishAutobiography(
+            val createResult = withContext(Dispatchers.IO) {
+                ApiService.createAutobiography(
                     token = token,
                     sessionId = sessionId,
                     chapterIds = ids,
                     title = bookTitle,
                 )
             }
-            if (publishResult.isFailure) {
+            if (createResult.isFailure) {
                 isPublishing = false
                 Toast.makeText(
                     context,
-                    publishResult.exceptionOrNull()?.message ?: "자서전 게시 실패",
+                    createResult.exceptionOrNull()?.message ?: "자서전 생성 실패",
                     Toast.LENGTH_SHORT
                 ).show()
                 return@launch
             }
             isPublishing = false
-            Toast.makeText(context, "자서전을 게시했어요.", Toast.LENGTH_SHORT).show()
-            onPostToFeed()
+            val created = createResult.getOrNull()!!
+            Toast.makeText(context, "자서전을 만들었어요.", Toast.LENGTH_SHORT).show()
+            onAutobiographyCreated(created.bookId)
         }
     }
 
@@ -424,46 +426,9 @@ fun BookPreviewScreen(
                 modifier = Modifier.padding(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                AnimatedVisibility(visible = isPublishing) {
-                    Card(
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = StoryVenueColors.Surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 18.dp, vertical = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        ) {
-                            CircularProgressIndicator(
-                                color = StoryVenueColors.Primary,
-                                strokeWidth = 3.dp,
-                                modifier = Modifier.size(24.dp),
-                            )
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(
-                                    text = "자서전을 작성중입니다.",
-                                    color = StoryVenueColors.Primary,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                                Text(
-                                    text = "잠시만 기다려주세요. 이야기 10편을 자연스럽게 이어 붙이는 데 시간이 조금 걸릴 수 있어요.",
-                                    color = StoryVenueColors.SubText,
-                                    fontSize = 13.sp,
-                                    lineHeight = 19.sp,
-                                )
-                            }
-                        }
-                    }
-                }
-
                 if (questionGroups.isNotEmpty()) {
                     val statusMessage = if (canCreateAutobiography) {
-                        "이야기 10편이 모두 모였어요. 이제 자서전을 만들어 피드에 올릴 수 있어요."
+                        "이야기 10편이 모두 모였어요. 이제 자서전을 만들 수 있어요."
                     } else {
                         "현재 ${10 - missingStoryNumbers.size}/10편이 모였어요. 이야기 ${missingStoryNumbers.joinToString(", ")}이 더 필요해요."
                     }
@@ -500,8 +465,8 @@ fun BookPreviewScreen(
 
                 Button(
                     onClick = {
-                        Log.d("BookPreview", "이야기 올리기 클릭")
-                        publish()
+                        Log.d("BookPreview", "자서전 만들기 클릭")
+                        createAutobiography()
                     },
                     enabled = !isPublishing && !isLoading && canCreateAutobiography && deletingChapterId == null && postingChapterId == null,
                     shape = RoundedCornerShape(50.dp),
@@ -533,7 +498,7 @@ fun BookPreviewScreen(
                         }
                     } else {
                         Text(
-                            text = "이야기 올리기",
+                            text = "자서전 만들기",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.SemiBold,
                         )
