@@ -115,6 +115,9 @@ fun StoryVenueNavGraph(
                         )
                     )
                 },
+                onOpenAutobiography = { sid ->
+                    navController.navigate(Routes.bookPreview(sid))
+                },
             )
         }
         composable(

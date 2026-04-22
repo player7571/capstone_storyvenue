@@ -6,6 +6,32 @@ import java.io.InterruptedIOException
 import java.net.SocketTimeoutException
 
 object ChapterBookApi {
+    private fun parseBookDetail(json: JSONObject): BookDetailData {
+        val chapters = mutableListOf<BookChapterPayloadData>()
+        val chaptersArray = json.optJSONArray("chapters") ?: JSONArray()
+        for (i in 0 until chaptersArray.length()) {
+            val obj = chaptersArray.optJSONObject(i) ?: continue
+            chapters.add(
+                BookChapterPayloadData(
+                    id = obj.optString("id", ""),
+                    title = obj.optString("title", ""),
+                    content = obj.optString("content", ""),
+                    sourceQuestionNo = if (obj.has("source_question_no") && !obj.isNull("source_question_no")) {
+                        obj.optInt("source_question_no")
+                    } else {
+                        null
+                    },
+                )
+            )
+        }
+        return BookDetailData(
+            id = json.getString("id"),
+            title = json.optString("title", ""),
+            subtitle = json.optCleanString("subtitle").ifBlank { null },
+            chapters = chapters,
+        )
+    }
+
     private fun parseGeneratedChapter(
         json: JSONObject,
         sessionId: String,
@@ -162,15 +188,62 @@ object ChapterBookApi {
             val body = response.body?.string() ?: ""
             if (response.isSuccessful) {
                 val json = JSONObject(body)
-                Result.success(
-                    BookDetailData(
-                        id = json.getString("id"),
-                        title = json.optString("title", ""),
-                        subtitle = json.optCleanString("subtitle").ifBlank { null },
-                    )
-                )
+                Result.success(parseBookDetail(json))
             } else {
                 Result.failure(Exception(parseErrorMessage(body, "책 만들기 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun createAutobiography(
+        token: String,
+        sessionId: String,
+        chapterIds: List<String>,
+        title: String,
+    ): Result<BookDetailData> {
+        return try {
+            val payload = JSONObject().apply {
+                put("session_id", sessionId)
+                put("chapter_ids", JSONArray(chapterIds))
+                put("title", title)
+            }.toString()
+            val response = apiChapterClient.newCall(
+                authPost("$API_BASE_URL/book/autobiography", token, payload)
+            ).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                val json = JSONObject(body)
+                Result.success(parseBookDetail(json))
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "자서전 생성 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun publishAutobiography(
+        token: String,
+        sessionId: String,
+        chapterIds: List<String>,
+        title: String,
+    ): Result<Unit> {
+        return try {
+            val payload = JSONObject().apply {
+                put("session_id", sessionId)
+                put("chapter_ids", JSONArray(chapterIds))
+                put("title", title)
+            }.toString()
+            val response = apiChapterClient.newCall(
+                authPost("$API_BASE_URL/book/autobiography/publish", token, payload)
+            ).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "자서전 게시 실패")))
             }
         } catch (e: Exception) {
             Result.failure(e)

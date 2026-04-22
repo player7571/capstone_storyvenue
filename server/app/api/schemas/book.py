@@ -9,10 +9,22 @@ class BookCompileRequest(BaseModel):
     title: str = Field(min_length=1)
 
 
+class AutobiographyCreateRequest(BaseModel):
+    session_id: UUID
+    chapter_ids: list[UUID] = Field(min_length=10, max_length=10)
+    title: str = Field(min_length=1)
+
+
+class AutobiographyPublishResponse(BaseModel):
+    book_id: UUID
+    post_id: UUID
+
+
 class BookChapterPayload(BaseModel):
     id: UUID
     title: str
     content: str
+    source_question_no: int | None = None
 
 
 class BookSummaryResponse(BaseModel):

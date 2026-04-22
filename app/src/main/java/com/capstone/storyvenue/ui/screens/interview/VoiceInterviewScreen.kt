@@ -31,10 +31,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -111,6 +113,7 @@ fun VoiceInterviewScreen(
     initialSessionId: String? = null,
     onBack: () -> Unit = {},
     onGenerateChapter: (String, Int?, String?, Boolean) -> Unit = { _, _, _, _ -> },
+    onOpenAutobiography: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -461,6 +464,17 @@ fun VoiceInterviewScreen(
                 currentQuestionStoryReady && currentQuestionHasAnswer && currentQuestionAnswerCount > 0 && currentQuestionNo != null
             }
         )
+    val canOpenAutobiography = sessionStarted &&
+        sessionType != "photo" &&
+        !isPreparingSession &&
+        !isUploadingPhoto &&
+        !isUploadingAudio &&
+        !isSubmittingText &&
+        !isNavigatingPrevious &&
+        !isNavigatingNext &&
+        !isRecording &&
+        currentQuestionNo == totalQuestions &&
+        (currentQuestionHasAnswer || isInterviewComplete)
 
     LaunchedEffect(uiState.errorMessage) {
         val msg = viewModel.consumeError()
@@ -865,6 +879,34 @@ fun VoiceInterviewScreen(
                     "이야기 생성하기"
                 },
             )
+
+            if (canOpenAutobiography) {
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = {
+                        val currentSessionId = sessionId
+                        if (!currentSessionId.isNullOrBlank()) {
+                            onOpenAutobiography(currentSessionId)
+                        }
+                    },
+                    shape = RoundedCornerShape(50.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = StoryVenueColors.Surface,
+                        contentColor = StoryVenueColors.Primary,
+                    ),
+                    border = null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                ) {
+                    Text(
+                        text = "자서전 만들러 가기",
+                        fontFamily = SBAggroFamily,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 18.sp,
+                    )
+                }
+            }
 
             Spacer(Modifier.height(32.dp))
         }

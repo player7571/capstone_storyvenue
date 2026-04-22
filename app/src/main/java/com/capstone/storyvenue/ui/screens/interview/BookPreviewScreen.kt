@@ -99,7 +99,7 @@ private fun buildPreview(content: String): String {
 }
 
 private fun buildQuestionLabel(sourceQuestionNo: Int?): String =
-    sourceQuestionNo?.let { "질문 $it" } ?: "자유 이야기"
+    sourceQuestionNo?.let { "이야기 $it" } ?: "자유 이야기"
 
 private fun buildGroupKey(sourceQuestionNo: Int?): String =
     sourceQuestionNo?.let { "q-$it" } ?: "free-story"
@@ -177,6 +177,13 @@ fun BookPreviewScreen(
     val showPreviousDraftsByGroup = remember { mutableStateMapOf<String, Boolean>() }
     var isPublishing by remember { mutableStateOf(false) }
     var deletingChapterId by remember { mutableStateOf<String?>(null) }
+    var postingChapterId by remember { mutableStateOf<String?>(null) }
+    val activeChapters = questionGroups
+        .map { it.activeChapter }
+        .sortedBy { it.sourceQuestionNo ?: Int.MAX_VALUE }
+    val storyNumbers = activeChapters.mapNotNull { it.sourceQuestionNo }.toSet()
+    val missingStoryNumbers = (1..10).filterNot { it in storyNumbers }
+    val canCreateAutobiography = questionGroups.isNotEmpty() && missingStoryNumbers.isEmpty()
 
     suspend fun loadChapters() {
         if (token.isBlank()) {
@@ -208,59 +215,40 @@ fun BookPreviewScreen(
 
     fun publish() {
         if (isPublishing) return
-        if (questionGroups.isEmpty()) {
-            Toast.makeText(context, "게시할 이야기가 없습니다.", Toast.LENGTH_SHORT).show()
+        if (!canCreateAutobiography) {
+            val missingText = if (missingStoryNumbers.isEmpty()) {
+                "이야기 10편이 모두 있어야 자서전을 만들 수 있어요."
+            } else {
+                "이야기 ${missingStoryNumbers.joinToString(", ")}이 더 필요해요."
+            }
+            Toast.makeText(context, missingText, Toast.LENGTH_SHORT).show()
             return
         }
 
         isPublishing = true
         scope.launch {
-            val activeChapters = questionGroups.map { it.activeChapter }
             val ids = activeChapters.map { it.id }
 
-            val compileResult = withContext(Dispatchers.IO) {
-                ApiService.compileBook(token = token, chapterIds = ids, title = bookTitle)
+            val publishResult = withContext(Dispatchers.IO) {
+                ApiService.publishAutobiography(
+                    token = token,
+                    sessionId = sessionId,
+                    chapterIds = ids,
+                    title = bookTitle,
+                )
             }
-            if (compileResult.isFailure) {
+            if (publishResult.isFailure) {
                 isPublishing = false
                 Toast.makeText(
                     context,
-                    compileResult.exceptionOrNull()?.message ?: "책 만들기 실패",
+                    publishResult.exceptionOrNull()?.message ?: "자서전 게시 실패",
                     Toast.LENGTH_SHORT
                 ).show()
                 return@launch
             }
-
-            val book = compileResult.getOrNull()!!
-            val subtitleLine = book.subtitle?.takeIf { it.isNotBlank() }
-            val chaptersBlock = activeChapters.joinToString("\n\n") { chapter ->
-                "${buildQuestionLabel(chapter.sourceQuestionNo)} : ${chapter.title}\n${chapter.content}"
-            }
-            val preview = if (subtitleLine != null) {
-                "$subtitleLine\n\n$chaptersBlock"
-            } else {
-                chaptersBlock
-            }
-
-            val feedResult = withContext(Dispatchers.IO) {
-                ApiService.createFeedPost(
-                    token = token,
-                    bookId = book.id,
-                    title = book.title,
-                    preview = preview,
-                )
-            }
             isPublishing = false
-            if (feedResult.isSuccess) {
-                Toast.makeText(context, "이야기를 게시했습니다.", Toast.LENGTH_SHORT).show()
-                onPostToFeed()
-            } else {
-                Toast.makeText(
-                    context,
-                    feedResult.exceptionOrNull()?.message ?: "게시 실패",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
+            Toast.makeText(context, "자서전을 게시했어요.", Toast.LENGTH_SHORT).show()
+            onPostToFeed()
         }
     }
 
@@ -286,6 +274,62 @@ fun BookPreviewScreen(
                 Toast.makeText(
                     context,
                     result.exceptionOrNull()?.message ?: "삭제에 실패했습니다.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
+
+    fun postChapter(chapter: BookChapter) {
+        if (postingChapterId != null || deletingChapterId != null || isPublishing) return
+        postingChapterId = chapter.id
+        scope.launch {
+            val compileResult = withContext(Dispatchers.IO) {
+                ApiService.compileBook(
+                    token = token,
+                    chapterIds = listOf(chapter.id),
+                    title = chapter.title,
+                )
+            }
+            if (compileResult.isFailure) {
+                postingChapterId = null
+                Toast.makeText(
+                    context,
+                    compileResult.exceptionOrNull()?.message ?: "초안 책 만들기에 실패했습니다.",
+                    Toast.LENGTH_SHORT
+                ).show()
+                return@launch
+            }
+
+            val book = compileResult.getOrNull()!!
+            val preview = buildString {
+                append(buildQuestionLabel(chapter.sourceQuestionNo))
+                append(" : ")
+                append(chapter.title)
+                append("\n")
+                append(chapter.content)
+            }
+
+            val result = withContext(Dispatchers.IO) {
+                ApiService.createFeedPost(
+                    token = token,
+                    bookId = book.id,
+                    title = book.title,
+                    preview = preview,
+                )
+            }
+            postingChapterId = null
+            if (result.isSuccess) {
+                Toast.makeText(
+                    context,
+                    "${buildQuestionLabel(chapter.sourceQuestionNo)} 초안을 게시했어요.",
+                    Toast.LENGTH_SHORT
+                ).show()
+                onPostToFeed()
+            } else {
+                Toast.makeText(
+                    context,
+                    result.exceptionOrNull()?.message ?: "초안 게시에 실패했습니다.",
                     Toast.LENGTH_SHORT
                 ).show()
             }
@@ -346,6 +390,7 @@ fun BookPreviewScreen(
                                 isExpanded = expandedGroupKey == group.key,
                                 showPreviousDrafts = showPreviousDraftsByGroup[group.key] == true,
                                 deletingChapterId = deletingChapterId,
+                                postingChapterId = postingChapterId,
                                 onToggle = {
                                     expandedGroupKey = if (expandedGroupKey == group.key) null else group.key
                                 },
@@ -356,6 +401,10 @@ fun BookPreviewScreen(
                                 onDeleteChapter = { chapter ->
                                     Log.d("BookPreview", "초안 삭제: ${chapter.title} (${chapter.id})")
                                     deleteChapter(chapter)
+                                },
+                                onPostChapter = { chapter ->
+                                    Log.d("BookPreview", "초안 게시: ${chapter.title} (${chapter.id})")
+                                    postChapter(chapter)
                                 },
                                 onTogglePreviousDrafts = {
                                     val current = showPreviousDraftsByGroup[group.key] == true
@@ -375,6 +424,57 @@ fun BookPreviewScreen(
                 modifier = Modifier.padding(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                AnimatedVisibility(visible = isPublishing) {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = StoryVenueColors.Surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 18.dp, vertical = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            CircularProgressIndicator(
+                                color = StoryVenueColors.Primary,
+                                strokeWidth = 3.dp,
+                                modifier = Modifier.size(24.dp),
+                            )
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = "자서전을 작성중입니다.",
+                                    color = StoryVenueColors.Primary,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Text(
+                                    text = "잠시만 기다려주세요. 이야기 10편을 자연스럽게 이어 붙이는 데 시간이 조금 걸릴 수 있어요.",
+                                    color = StoryVenueColors.SubText,
+                                    fontSize = 13.sp,
+                                    lineHeight = 19.sp,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (questionGroups.isNotEmpty()) {
+                    val statusMessage = if (canCreateAutobiography) {
+                        "이야기 10편이 모두 모였어요. 이제 자서전을 만들어 피드에 올릴 수 있어요."
+                    } else {
+                        "현재 ${10 - missingStoryNumbers.size}/10편이 모였어요. 이야기 ${missingStoryNumbers.joinToString(", ")}이 더 필요해요."
+                    }
+                    Text(
+                        text = statusMessage,
+                        color = if (canCreateAutobiography) StoryVenueColors.Primary else StoryVenueColors.SubText,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                    )
+                }
+
                 OutlinedButton(
                     onClick = {
                         Log.d("BookPreview", "이야기 더 만들기 클릭")
@@ -400,10 +500,10 @@ fun BookPreviewScreen(
 
                 Button(
                     onClick = {
-                        Log.d("BookPreview", "이야기에 올리기 클릭")
+                        Log.d("BookPreview", "이야기 올리기 클릭")
                         publish()
                     },
-                    enabled = !isPublishing && !isLoading && questionGroups.isNotEmpty() && deletingChapterId == null,
+                    enabled = !isPublishing && !isLoading && canCreateAutobiography && deletingChapterId == null && postingChapterId == null,
                     shape = RoundedCornerShape(50.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = StoryVenueColors.Primary,
@@ -416,14 +516,24 @@ fun BookPreviewScreen(
                         .height(52.dp),
                 ) {
                     if (isPublishing) {
-                        CircularProgressIndicator(
-                            color = Color.White,
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(22.dp),
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(22.dp),
+                            )
+                            Text(
+                                text = "자서전 작성 중...",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
                     } else {
                         Text(
-                            text = "이야기에 올리기",
+                            text = "이야기 올리기",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.SemiBold,
                         )
@@ -480,9 +590,11 @@ private fun QuestionGroupCard(
     isExpanded: Boolean,
     showPreviousDrafts: Boolean,
     deletingChapterId: String?,
+    postingChapterId: String?,
     onToggle: () -> Unit,
     onOpenActiveClick: () -> Unit,
     onDeleteChapter: (BookChapter) -> Unit,
+    onPostChapter: (BookChapter) -> Unit,
     onTogglePreviousDrafts: () -> Unit,
     onOpenPreviousClick: (BookChapter) -> Unit,
 ) {
@@ -597,6 +709,28 @@ private fun QuestionGroupCard(
                         overflow = TextOverflow.Ellipsis,
                     )
 
+                    Spacer(Modifier.height(12.dp))
+                    TextButton(
+                        onClick = { onPostChapter(group.activeChapter) },
+                        enabled = postingChapterId != group.activeChapter.id && deletingChapterId == null,
+                        contentPadding = PaddingValues(0.dp),
+                    ) {
+                        if (postingChapterId == group.activeChapter.id) {
+                            CircularProgressIndicator(
+                                color = StoryVenueColors.Primary,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        } else {
+                            Text(
+                                text = "이 초안 피드에 올리기",
+                                color = StoryVenueColors.Primary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
+
                     if (group.previousChapters.isNotEmpty()) {
                         Spacer(Modifier.height(16.dp))
                         TextButton(
@@ -626,8 +760,10 @@ private fun QuestionGroupCard(
                                     PreviousDraftRow(
                                         chapter = chapter,
                                         isDeleting = deletingChapterId == chapter.id,
+                                        isPosting = postingChapterId == chapter.id,
                                         onOpenClick = { onOpenPreviousClick(chapter) },
                                         onDeleteClick = { onDeleteChapter(chapter) },
+                                        onPostClick = { onPostChapter(chapter) },
                                     )
                                 }
                             }
@@ -643,65 +779,91 @@ private fun QuestionGroupCard(
 private fun PreviousDraftRow(
     chapter: BookChapter,
     isDeleting: Boolean,
+    isPosting: Boolean,
     onOpenClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    onPostClick: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "이전 초안 ${chapter.historyIndex ?: 1} · ${formatDraftTimestamp(chapter.createdAt)}",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                color = StoryVenueColors.SubText,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = chapter.title,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = StoryVenueColors.OnSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "이전 초안 ${chapter.historyIndex ?: 1} · ${formatDraftTimestamp(chapter.createdAt)}",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = StoryVenueColors.SubText,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = chapter.title,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = StoryVenueColors.OnSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            Spacer(Modifier.width(8.dp))
+
+            IconButton(
+                onClick = onOpenClick,
+                modifier = Modifier.size(24.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = "이전 초안 보기",
+                    tint = StoryVenueColors.SubText,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+
+            Spacer(Modifier.width(4.dp))
+
+            IconButton(
+                onClick = onDeleteClick,
+                enabled = !isDeleting && !isPosting,
+                modifier = Modifier.size(24.dp),
+            ) {
+                if (isDeleting) {
+                    CircularProgressIndicator(
+                        color = StoryVenueColors.Error,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(16.dp),
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Filled.DeleteOutline,
+                        contentDescription = "이전 초안 삭제",
+                        tint = StoryVenueColors.Error,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
         }
 
-        Spacer(Modifier.width(8.dp))
-
-        IconButton(
-            onClick = onOpenClick,
-            modifier = Modifier.size(24.dp),
+        Spacer(Modifier.height(6.dp))
+        TextButton(
+            onClick = onPostClick,
+            enabled = !isDeleting && !isPosting,
+            contentPadding = PaddingValues(0.dp),
         ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = "이전 초안 보기",
-                tint = StoryVenueColors.SubText,
-                modifier = Modifier.size(20.dp),
-            )
-        }
-
-        Spacer(Modifier.width(4.dp))
-
-        IconButton(
-            onClick = onDeleteClick,
-            enabled = !isDeleting,
-            modifier = Modifier.size(24.dp),
-        ) {
-            if (isDeleting) {
+            if (isPosting) {
                 CircularProgressIndicator(
-                    color = StoryVenueColors.Error,
+                    color = StoryVenueColors.Primary,
                     strokeWidth = 2.dp,
                     modifier = Modifier.size(16.dp),
                 )
             } else {
-                Icon(
-                    imageVector = Icons.Filled.DeleteOutline,
-                    contentDescription = "이전 초안 삭제",
-                    tint = StoryVenueColors.Error,
-                    modifier = Modifier.size(18.dp),
+                Text(
+                    text = "이 초안 피드에 올리기",
+                    color = StoryVenueColors.Primary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
                 )
             }
         }

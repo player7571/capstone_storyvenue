@@ -109,6 +109,20 @@ object ApiService {
         title: String,
     ): Result<BookDetailData> = ChapterBookApi.compileBook(token, chapterIds, title)
 
+    fun createAutobiography(
+        token: String,
+        sessionId: String,
+        chapterIds: List<String>,
+        title: String,
+    ): Result<BookDetailData> = ChapterBookApi.createAutobiography(token, sessionId, chapterIds, title)
+
+    fun publishAutobiography(
+        token: String,
+        sessionId: String,
+        chapterIds: List<String>,
+        title: String,
+    ): Result<Unit> = ChapterBookApi.publishAutobiography(token, sessionId, chapterIds, title)
+
     fun createFeedPost(
         token: String,
         bookId: String,
@@ -273,4 +287,12 @@ data class BookDetailData(
     val id: String,
     val title: String,
     val subtitle: String?,
+    val chapters: List<BookChapterPayloadData> = emptyList(),
+)
+
+data class BookChapterPayloadData(
+    val id: String,
+    val title: String,
+    val content: String,
+    val sourceQuestionNo: Int? = null,
 )
