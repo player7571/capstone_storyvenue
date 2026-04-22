@@ -22,6 +22,8 @@ class InterviewStateResponse(BaseModel):
     current_question_answer_count: int = 0
     current_question_story_ready: bool = False
     current_question_story_quality: str = "none"
+    current_question_completed: bool = False
+    current_question_can_move_next: bool = False
     story_target_question_no: int | None = None
     story_target_has_answer: bool = False
     story_target_answer_count: int = 0

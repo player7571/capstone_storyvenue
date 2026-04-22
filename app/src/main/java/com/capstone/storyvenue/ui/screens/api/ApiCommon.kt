@@ -102,6 +102,8 @@ internal fun parseInterviewState(json: JSONObject?): InterviewPromptData? {
         currentQuestionAnswerCount = json.optInt("current_question_answer_count", 0),
         currentQuestionStoryReady = json.optBoolean("current_question_story_ready", false),
         currentQuestionStoryQuality = json.optString("current_question_story_quality", "none"),
+        currentQuestionCompleted = json.optBoolean("current_question_completed", false),
+        currentQuestionCanMoveNext = json.optBoolean("current_question_can_move_next", false),
         storyTargetQuestionNo = if (json.has("story_target_question_no") && !json.isNull("story_target_question_no")) {
             json.optInt("story_target_question_no")
         } else {

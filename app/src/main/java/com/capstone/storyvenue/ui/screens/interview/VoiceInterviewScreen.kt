@@ -80,8 +80,8 @@ import java.util.Locale
 fun defaultVoiceInterviewPrompt() = InterviewPromptData(
     currentQuestionNo = 1,
     totalQuestions = 10,
-    mainQuestion = "어린 시절은 어떠했나요?",
-    questionHint = "집, 가족, 동네 중 떠오르는 것부터 말씀해주세요.",
+    mainQuestion = "어릴 적 살던 곳과 집안 분위기는 어떠했나요?",
+    questionHint = "집, 가족, 동네 모습 중 떠오르는 것부터 말씀해주세요.",
     followUpCount = 0,
     questionStatus = "main",
     progressPercent = 10,
@@ -408,7 +408,8 @@ fun VoiceInterviewScreen(
     val currentQuestionAnswerCount = currentPrompt?.currentQuestionAnswerCount ?: 0
     val currentQuestionStoryReady = currentPrompt?.currentQuestionStoryReady == true
     val currentQuestionStoryQuality = currentPrompt?.currentQuestionStoryQuality ?: "none"
-    val assistantLabel = if (currentPrompt?.questionStatus == "follow_up") "AI 보조 질문" else "AI 인터뷰어"
+    val assistantLabel = "AI 인터뷰어"
+    val displayAssistantText = assistantText
     val recordingTimeText = String.format("%02d:%02d", recordingSeconds / 60, recordingSeconds % 60)
 
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
@@ -798,10 +799,10 @@ fun VoiceInterviewScreen(
                 )
             }
 
-            if (assistantText.isNotBlank()) {
+            if (displayAssistantText.isNotBlank()) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "$assistantLabel: $assistantText",
+                    text = "$assistantLabel: $displayAssistantText",
                     fontSize = 16.sp,
                     color = StoryVenueColors.Primary,
                     fontFamily = SBAggroFamily,
@@ -828,29 +829,7 @@ fun VoiceInterviewScreen(
             }
 
             Spacer(Modifier.height(32.dp))
-
-            if (sessionType != "photo") {
-                val helperText = when {
-                    currentQuestionNo == null -> "현재 질문에 답변하면 이야기를 만들 수 있어요."
-                    !currentQuestionHasAnswer || currentQuestionAnswerCount <= 0 ->
-                        "현재 질문에 답변해야 이 질문의 이야기를 만들 수 있어요."
-                    currentQuestionStoryQuality == "basic" ->
-                        "현재 질문 답변이 짧아도 지금 이야기로 만들 수 있어요."
-                    currentQuestionStoryReady ->
-                        "현재 질문 답변으로 이야기를 만들 수 있어요."
-                    else ->
-                        "현재 질문에 답변하면 이야기를 만들 수 있어요."
-                }
-                Text(
-                    text = helperText,
-                    fontSize = 14.sp,
-                    color = StoryVenueColors.SubText,
-                    fontFamily = SBAggroFamily,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(12.dp))
-            }
+            Spacer(Modifier.height(12.dp))
 
             StoryButton(
                 onClick = {

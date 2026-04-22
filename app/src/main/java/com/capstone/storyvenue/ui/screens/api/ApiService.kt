@@ -213,6 +213,8 @@ data class InterviewPromptData(
     val currentQuestionAnswerCount: Int = 0,
     val currentQuestionStoryReady: Boolean = false,
     val currentQuestionStoryQuality: String = "none",
+    val currentQuestionCompleted: Boolean = false,
+    val currentQuestionCanMoveNext: Boolean = false,
     val storyTargetQuestionNo: Int? = null,
     val storyTargetHasAnswer: Boolean = false,
     val storyTargetAnswerCount: Int = 0,

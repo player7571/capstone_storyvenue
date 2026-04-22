@@ -3,6 +3,7 @@ import re
 from textwrap import dedent
 
 from app.services.interview.llm import get_interview_openai_client
+from app.services.interview.slot_keywords import extract_local_slots
 from app.services.interview.state import get_question_answers
 from app.services.interview.types import (
     InterviewQuestion,
@@ -37,121 +38,6 @@ ASSESSMENT_SYSTEM_PROMPT = dedent(
     - answer_summary는 사용자의 답변을 1문장 이내로 짧게 요약합니다.
     """
 ).strip()
-
-LOCAL_SLOT_KEYWORDS: dict[SlotName, tuple[str, ...]] = {
-    "person": (
-        "어머니",
-        "아버지",
-        "엄마",
-        "아빠",
-        "형",
-        "누나",
-        "언니",
-        "오빠",
-        "동생",
-        "할머니",
-        "할아버지",
-        "친구",
-        "선생님",
-        "가족",
-        "아내",
-        "남편",
-        "아이",
-        "자식",
-    ),
-    "place": (
-        "서울",
-        "부산",
-        "대구",
-        "인천",
-        "광주",
-        "시골",
-        "마을",
-        "동네",
-        "집",
-        "학교",
-        "공장",
-        "시장",
-        "회사",
-        "교회",
-        "역",
-    ),
-    "time": (
-        "어릴 때",
-        "젊었을 때",
-        "그때",
-        "옛날",
-        "초등학교",
-        "중학교",
-        "고등학교",
-        "스무 살",
-        "스무살",
-        "서른",
-        "마흔",
-        "명절",
-        "겨울",
-        "여름",
-        "봄",
-        "가을",
-    ),
-    "event": (
-        "결혼",
-        "졸업",
-        "입학",
-        "취직",
-        "취업",
-        "일했",
-        "장사",
-        "이사",
-        "전쟁",
-        "사고",
-        "병원",
-        "출근",
-        "첫 직장",
-        "군대",
-    ),
-    "emotion": (
-        "외로",
-        "기뻤",
-        "슬펐",
-        "무서",
-        "걱정",
-        "감사",
-        "행복",
-        "먹먹",
-        "따뜻",
-        "힘들",
-        "좋았",
-        "떨렸",
-        "긴장",
-        "뿌듯",
-    ),
-    "scene": (
-        "장면",
-        "모습",
-        "기억",
-        "눈앞",
-        "마당",
-        "냇가",
-        "식탁",
-        "밥상",
-        "기차역",
-        "시장",
-        "길",
-    ),
-    "value": (
-        "책임감",
-        "소중",
-        "감사",
-        "버텨",
-        "참아",
-        "사람 마음",
-        "가족이 먼저",
-        "정직",
-        "성실",
-        "포기",
-    ),
-}
 
 QUESTION_LIKE_ENDINGS = (
     "?",
@@ -304,15 +190,6 @@ def _build_assessment_input(
     ).strip()
 
 
-def _extract_local_slots(text: str) -> list[SlotName]:
-    lowered = text.lower()
-    found: list[SlotName] = []
-    for slot, keywords in LOCAL_SLOT_KEYWORDS.items():
-        if any(keyword.lower() in lowered for keyword in keywords):
-            found.append(slot)
-    return found
-
-
 def _normalize_assessment(
     question: InterviewQuestion,
     state: VoiceInterviewState,
@@ -344,16 +221,9 @@ def _normalize_assessment(
     combined_text = " ".join(
         [*get_question_answers(state, state.current_question_no), user_text]
     ).strip()
-    for slot in _extract_local_slots(combined_text):
+    for slot in extract_local_slots(combined_text):
         if slot not in assessment.filled_slots:
             assessment.filled_slots.append(slot)
-
-    if (
-        "emotion" in assessment.filled_slots
-        and assessment.reflection_score < 1
-        and question.allow_emotion_exception
-    ):
-        assessment.reflection_score = 1
 
     if len(assessment.filled_slots) >= 2 and assessment.detail_score < 1:
         assessment.detail_score = 1

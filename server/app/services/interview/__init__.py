@@ -10,10 +10,14 @@ from app.services.interview.assessment import request_voice_interview_assessment
 from app.services.interview.decision import (
     SKIP_KEYWORDS,
     decide_interview_turn,
+    is_story_generatable_answer,
 )
 from app.services.interview.follow_up import (
     build_follow_up_fallback,
+    build_interviewer_acknowledgement_fallback,
+    build_interviewer_guidance,
     request_follow_up_question,
+    request_interviewer_acknowledgement,
 )
 from app.services.interview.llm import get_interview_openai_client
 from app.services.interview.state import (
@@ -25,6 +29,7 @@ from app.services.interview.state import (
     get_question_answer_count,
     get_question_answers,
     get_question_story_quality,
+    is_question_story_generatable,
     is_voice_interview_state_message,
     is_question_story_ready,
     move_voice_interview_question,
@@ -42,6 +47,7 @@ from app.services.interview.store import (
 )
 from app.services.interview.types import (
     FollowUpQuestionResponse,
+    InterviewerAcknowledgementResponse,
     INTERVIEW_STATE_PREFIX,
     INTERVIEW_STATE_ROLE,
     InterviewQuestion,
@@ -57,6 +63,7 @@ from app.services.interview.types import (
 
 __all__ = [
     "FollowUpQuestionResponse",
+    "InterviewerAcknowledgementResponse",
     "INTERVIEW_STATE_PREFIX",
     "INTERVIEW_STATE_ROLE",
     "InterviewQuestion",
@@ -76,6 +83,8 @@ __all__ = [
     "append_question_answer",
     "append_question_answer_record",
     "build_follow_up_fallback",
+    "build_interviewer_acknowledgement_fallback",
+    "build_interviewer_guidance",
     "build_initial_voice_interview_state",
     "build_question_answer_conversation_history",
     "build_voice_interview_prompt_state",
@@ -89,6 +98,8 @@ __all__ = [
     "get_question_story_quality",
     "get_total_question_count",
     "initialize_question_state_rows",
+    "is_question_story_generatable",
+    "is_story_generatable_answer",
     "is_question_story_ready",
     "is_voice_interview_state_message",
     "load_question_state_from_store",
@@ -97,6 +108,7 @@ __all__ = [
     "move_voice_interview_question",
     "parse_voice_interview_state",
     "request_follow_up_question",
+    "request_interviewer_acknowledgement",
     "request_voice_interview_assessment",
     "save_voice_interview_state_to_store",
     "serialize_voice_interview_state",
