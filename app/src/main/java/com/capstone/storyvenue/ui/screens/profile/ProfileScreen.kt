@@ -78,10 +78,12 @@ fun ProfileScreen(
     val context = LocalContext.current
     val prefs = context.getSharedPreferences("storyvenue", android.content.Context.MODE_PRIVATE)
     val token = prefs.getString("access_token", "") ?: ""
+    val cachedUserName = prefs.getString("user_name", "") ?: ""
+    val cachedUserEmail = prefs.getString("user_email", "") ?: ""
 
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    var userName by remember { mutableStateOf("") }
-    var userEmail by remember { mutableStateOf("") }
+    var userName by remember { mutableStateOf(cachedUserName) }
+    var userEmail by remember { mutableStateOf(cachedUserEmail) }
     var avatarUrl by remember { mutableStateOf<String?>(null) }
     var avatarBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var isUploadingAvatar by remember { mutableStateOf(false) }
@@ -144,6 +146,10 @@ fun ProfileScreen(
             userEmail = it.email
             editName = it.name
             avatarUrl = it.avatarUrl
+            prefs.edit()
+                .putString("user_name", it.name)
+                .putString("user_email", it.email)
+                .apply()
             it.avatarUrl?.let { url -> loadAvatar(url) }
         }.onFailure { e ->
             errorMessage = e.message ?: "내정보를 불러오지 못했습니다."
@@ -181,6 +187,10 @@ fun ProfileScreen(
                 userEmail = profile.email
                 avatarUrl = profile.avatarUrl
                 avatarBitmap = null
+                prefs.edit()
+                    .putString("user_name", profile.name)
+                    .putString("user_email", profile.email)
+                    .apply()
                 profile.avatarUrl?.let { url -> loadAvatar(url) }
                 infoMessage = "사진이 변경되었습니다."
             }.onFailure { e ->
@@ -279,6 +289,10 @@ fun ProfileScreen(
                             result.onSuccess {
                                 userName = it.name
                                 userEmail = it.email
+                                prefs.edit()
+                                    .putString("user_name", it.name)
+                                    .putString("user_email", it.email)
+                                    .apply()
                                 showEditDialog = false
                                 infoMessage = "내정보가 수정되었습니다."
                             }.onFailure { e ->

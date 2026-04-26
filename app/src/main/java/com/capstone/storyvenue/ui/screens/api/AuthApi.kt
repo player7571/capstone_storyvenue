@@ -1,11 +1,143 @@
 package com.capstone.storyvenue.ui.screens
 
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MultipartBody
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
+data class KakaoAuthorizeData(
+    val authorizeUrl: String,
+    val redirectUri: String,
+    val state: String,
+)
+
+data class AuthSessionData(
+    val accessToken: String,
+    val refreshToken: String? = null,
+    val userId: String,
+    val name: String = "",
+    val email: String = "",
+)
+
 object AuthApi {
+    private fun toEmulatorReachableBackendUrl(url: String): String {
+        val parsedUrl = url.toHttpUrlOrNull() ?: return url
+        val apiBaseUrl = API_BASE_URL.toHttpUrlOrNull() ?: return url
+        val isLocalBackendUrl = parsedUrl.port == apiBaseUrl.port &&
+            (parsedUrl.host == "127.0.0.1" || parsedUrl.host == "localhost")
+
+        return if (isLocalBackendUrl) {
+            parsedUrl.newBuilder()
+                .scheme(apiBaseUrl.scheme)
+                .host(apiBaseUrl.host)
+                .port(apiBaseUrl.port)
+                .build()
+                .toString()
+        } else {
+            url
+        }
+    }
+
+    fun getKakaoAuthorizeUrl(): Result<KakaoAuthorizeData> {
+        return try {
+            val request = Request.Builder()
+                .url("$API_BASE_URL/auth/kakao/authorize-url")
+                .get()
+                .build()
+
+            val response = apiClient.newCall(request).execute()
+            val responseBody = response.body?.string() ?: ""
+            if (!response.isSuccessful) {
+                val detail = parseErrorMessage(responseBody, "카카오 로그인 URL 조회에 실패했습니다")
+                return Result.failure(Exception(detail))
+            }
+
+            val json = try {
+                JSONObject(responseBody)
+            } catch (_: Exception) {
+                return Result.failure(Exception("카카오 로그인 URL 응답 형식이 올바르지 않습니다."))
+            }
+
+            val authorizeUrl = toEmulatorReachableBackendUrl(json.optString("authorize_url", "").trim())
+            if (authorizeUrl.isBlank()) {
+                return Result.failure(Exception("카카오 로그인 URL이 비어 있습니다."))
+            }
+
+            val parsedAuthorizeUrl = authorizeUrl.toHttpUrlOrNull()
+            val redirectUri = parsedAuthorizeUrl
+                ?.queryParameter("redirect_uri")
+                ?.trim()
+                .orEmpty()
+            if (redirectUri.isBlank()) {
+                return Result.failure(Exception("카카오 redirect URI를 확인할 수 없습니다."))
+            }
+            val state = json.optString("state", "").trim()
+                .ifBlank { parsedAuthorizeUrl?.queryParameter("state")?.trim().orEmpty() }
+            if (state.isBlank()) {
+                return Result.failure(Exception("카카오 인증 state 값을 확인할 수 없습니다."))
+            }
+
+            Result.success(
+                KakaoAuthorizeData(
+                    authorizeUrl = authorizeUrl,
+                    redirectUri = redirectUri,
+                    state = state,
+                )
+            )
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun loginWithKakaoCode(code: String, state: String): Result<AuthSessionData> {
+        return try {
+            val body = JSONObject().apply {
+                put("code", code)
+                put("state", state)
+            }.toString().toRequestBody(apiJsonType)
+
+            val request = Request.Builder()
+                .url("$API_BASE_URL/auth/kakao/login")
+                .post(body)
+                .build()
+
+            val response = apiClient.newCall(request).execute()
+            val responseBody = response.body?.string() ?: ""
+            if (!response.isSuccessful) {
+                val detail = parseErrorMessage(responseBody, "카카오 로그인에 실패했습니다")
+                return Result.failure(Exception(detail))
+            }
+
+            val json = try {
+                JSONObject(responseBody)
+            } catch (_: Exception) {
+                return Result.failure(Exception("카카오 로그인 응답 형식이 올바르지 않습니다."))
+            }
+
+            val accessToken = json.optString("access_token", "").trim()
+            val refreshToken = json.optString("refresh_token", "").trim()
+            val userId = json.optString("user_id", "").trim()
+            val name = json.optString("name", "").trim()
+            val email = json.optString("email", "").trim()
+            if (accessToken.isBlank() || userId.isBlank()) {
+                return Result.failure(Exception("카카오 로그인 토큰 정보가 올바르지 않습니다."))
+            }
+
+            Result.success(
+                AuthSessionData(
+                    accessToken = accessToken,
+                    refreshToken = refreshToken.ifBlank { null },
+                    userId = userId,
+                    name = name,
+                    email = email,
+                )
+            )
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     fun login(email: String, password: String): Result<Pair<String, String>> {
         return try {
             val body = JSONObject().apply {

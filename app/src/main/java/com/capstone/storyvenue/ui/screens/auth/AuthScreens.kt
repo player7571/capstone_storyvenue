@@ -2,6 +2,10 @@ package com.capstone.storyvenue.ui.screens
 
 import android.app.Activity
 import android.content.Context
+import android.net.Uri
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -31,6 +35,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -57,6 +62,9 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.capstone.storyvenue.ui.theme.SBAggroFamily
 import com.capstone.storyvenue.ui.theme.StoryVenueColors
 import kotlinx.coroutines.Dispatchers
@@ -224,7 +232,10 @@ fun SplashScreen(
         } else {
             prefs.edit()
                 .remove("access_token")
+                .remove("refresh_token")
                 .remove("user_id")
+                .remove("user_name")
+                .remove("user_email")
                 .apply()
             onNavigateToLogin()
         }
@@ -268,12 +279,13 @@ fun SplashScreen(
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit,
-    onNavigateToSignUp: () -> Unit,
 ) {
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var showKakaoWebView by remember { mutableStateOf(false) }
+    var kakaoAuthorizeUrl by remember { mutableStateOf("") }
+    var kakaoRedirectUri by remember { mutableStateOf("") }
+    var kakaoState by remember { mutableStateOf("") }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -294,60 +306,198 @@ fun LoginScreen(
                 fontFamily = SBAggroFamily,
             )
             Spacer(Modifier.height(48.dp))
-            StoryTextField(
-                value = email,
-                onValueChange = { email = it; errorMessage = null },
-                label = "이메일",
-                keyboardType = KeyboardType.Email,
-            )
-            Spacer(Modifier.height(20.dp))
-            StoryTextField(
-                value = password,
-                onValueChange = { password = it; errorMessage = null },
-                label = "비밀번호",
-                isPassword = true,
-                errorMessage = errorMessage,
-            )
-            Spacer(Modifier.height(28.dp))
-            StoryButton(
-                text = "로그인",
-                isLoading = isLoading,
+            Button(
                 onClick = {
-                    if (email.isBlank() || password.isBlank()) {
-                        errorMessage = "이메일과 비밀번호를 입력해주세요"
-                        return@StoryButton
-                    }
                     isLoading = true
                     errorMessage = null
                     scope.launch(Dispatchers.IO) {
-                        val result = ApiService.login(email, password)
+                        val result = ApiService.getKakaoAuthorizeUrl()
                         withContext(Dispatchers.Main) {
                             isLoading = false
-                            result.onSuccess { (token, userId) ->
-                                context.getSharedPreferences("storyvenue", Activity.MODE_PRIVATE)
-                                    .edit()
-                                    .putString("access_token", token)
-                                    .putString("user_id", userId)
-                                    .apply()
-                                onLoginSuccess()
+                            result.onSuccess { authData ->
+                                kakaoAuthorizeUrl = authData.authorizeUrl
+                                kakaoRedirectUri = authData.redirectUri
+                                kakaoState = authData.state
+                                showKakaoWebView = true
                             }.onFailure { e ->
                                 errorMessage = e.message
                             }
                         }
                     }
                 },
-            )
-            Spacer(Modifier.height(20.dp))
-            TextButton(onClick = onNavigateToSignUp) {
+                enabled = !isLoading,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFFEE500),
+                    contentColor = Color(0xFF191919),
+                    disabledContainerColor = Color(0xFFFEE500).copy(alpha = 0.55f),
+                    disabledContentColor = Color(0xFF191919).copy(alpha = 0.7f),
+                ),
+                shape = RoundedCornerShape(50.dp),
+                modifier = Modifier.fillMaxWidth().height(60.dp),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        color = Color(0xFF191919),
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(22.dp),
+                    )
+                } else {
+                    Text(
+                        text = "카카오로 로그인",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = SBAggroFamily,
+                    )
+                }
+            }
+            if (errorMessage != null) {
+                Spacer(Modifier.height(14.dp))
                 Text(
-                    text = "회원가입으로 이동",
-                    color = StoryVenueColors.SubText,
+                    text = errorMessage ?: "",
+                    color = StoryVenueColors.Error,
                     fontSize = 16.sp,
+                    textAlign = TextAlign.Center,
                     fontFamily = SBAggroFamily,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
             Spacer(Modifier.height(32.dp))
         }
+    }
+
+    if (showKakaoWebView && kakaoAuthorizeUrl.isNotBlank() && kakaoRedirectUri.isNotBlank()) {
+        KakaoAuthWebViewDialog(
+            authorizeUrl = kakaoAuthorizeUrl,
+            redirectUri = kakaoRedirectUri,
+            expectedState = kakaoState,
+            onClose = { showKakaoWebView = false },
+            onAuthError = { message ->
+                showKakaoWebView = false
+                errorMessage = message
+            },
+            onAuthCodeReceived = { code, state ->
+                showKakaoWebView = false
+                isLoading = true
+                errorMessage = null
+                scope.launch(Dispatchers.IO) {
+                    val result = ApiService.loginWithKakaoCode(code, state)
+                    withContext(Dispatchers.Main) {
+                        isLoading = false
+                        result.onSuccess { session ->
+                            context.getSharedPreferences("storyvenue", Activity.MODE_PRIVATE)
+                                .edit()
+                                .putString("access_token", session.accessToken)
+                                .putString("refresh_token", session.refreshToken)
+                                .putString("user_id", session.userId)
+                                .putString("user_name", session.name)
+                                .putString("user_email", session.email)
+                                .apply()
+                            onLoginSuccess()
+                        }.onFailure { e ->
+                            errorMessage = e.message
+                        }
+                    }
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun KakaoAuthWebViewDialog(
+    authorizeUrl: String,
+    redirectUri: String,
+    expectedState: String,
+    onClose: () -> Unit,
+    onAuthError: (String) -> Unit,
+    onAuthCodeReceived: (String, String) -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            color = StoryVenueColors.Background,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { context ->
+                        WebView(context).apply {
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+
+                            var handled = false
+
+                            fun tryHandleCallback(url: String?): Boolean {
+                                val targetUrl = url?.trim().orEmpty()
+                                if (handled || targetUrl.isBlank()) return false
+                                if (!targetUrl.startsWith(redirectUri)) return false
+
+                                handled = true
+                                val (code, state, errorMessage) = parseKakaoCallbackUrl(targetUrl)
+                                when {
+                                    !errorMessage.isNullOrBlank() ->
+                                        onAuthError("카카오 인증에 실패했습니다: $errorMessage")
+                                    state.isNullOrBlank() || state != expectedState ->
+                                        onAuthError("카카오 인증 state 검증에 실패했습니다.")
+                                    !code.isNullOrBlank() -> onAuthCodeReceived(code, state)
+                                    else -> onAuthError("카카오 인증 코드를 확인할 수 없습니다.")
+                                }
+                                return true
+                            }
+
+                            webViewClient = object : WebViewClient() {
+                                override fun shouldOverrideUrlLoading(
+                                    view: WebView?,
+                                    request: WebResourceRequest?,
+                                ): Boolean = tryHandleCallback(request?.url?.toString())
+
+                                override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean =
+                                    tryHandleCallback(url)
+
+                                override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                                    if (!tryHandleCallback(url)) {
+                                        super.onPageStarted(view, url, favicon)
+                                    }
+                                }
+                            }
+
+                            loadUrl(authorizeUrl)
+                        }
+                    },
+                )
+
+                TextButton(
+                    onClick = onClose,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(top = 24.dp, end = 16.dp),
+                ) {
+                    Text(
+                        text = "닫기",
+                        color = StoryVenueColors.SubText,
+                        fontFamily = SBAggroFamily,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun parseKakaoCallbackUrl(callbackUrl: String): Triple<String?, String?, String?> {
+    return try {
+        val uri = Uri.parse(callbackUrl)
+        val code = uri.getQueryParameter("code")?.trim().orEmpty().ifBlank { null }
+        val state = uri.getQueryParameter("state")?.trim().orEmpty().ifBlank { null }
+        val error = (
+            uri.getQueryParameter("error_description")
+                ?: uri.getQueryParameter("error")
+                ?: uri.getQueryParameter("error_reason")
+            ).orEmpty().trim().ifBlank { null }
+        Triple(code, state, error)
+    } catch (_: Exception) {
+        Triple(null, null, "카카오 인증 응답 파싱에 실패했습니다.")
     }
 }
 

@@ -74,7 +74,6 @@ fun StoryVenueNavGraph(
         composable(Routes.LOGIN) {
             LoginScreen(
                 onLoginSuccess = { navController.navigate(Routes.FEED) { popUpTo(Routes.LOGIN) { inclusive = true } } },
-                onNavigateToSignUp = { navController.navigate(Routes.SIGNUP) },
             )
         }
         composable(Routes.SIGNUP) {

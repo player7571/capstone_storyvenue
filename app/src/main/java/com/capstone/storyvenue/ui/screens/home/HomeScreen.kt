@@ -81,8 +81,9 @@ fun HomeScreen(
     val context = LocalContext.current
     val prefs = context.getSharedPreferences("storyvenue", android.content.Context.MODE_PRIVATE)
     val token = prefs.getString("access_token", "") ?: ""
+    val cachedUserName = prefs.getString("user_name", "") ?: ""
 
-    var userName by remember { mutableStateOf("이름") }
+    var userName by remember { mutableStateOf(cachedUserName.ifBlank { "이름" }) }
     var sessions by remember { mutableStateOf<List<InterviewSession>>(emptyList()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isRefreshing by remember { mutableStateOf(false) }
@@ -104,7 +105,13 @@ fun HomeScreen(
             return
         }
         val profileResult = withContext(Dispatchers.IO) { ApiService.getProfile(token) }
-        profileResult.onSuccess { userName = it.name.ifBlank { "이름" } }
+        profileResult.onSuccess {
+            userName = it.name.ifBlank { "이름" }
+            prefs.edit()
+                .putString("user_name", it.name)
+                .putString("user_email", it.email)
+                .apply()
+        }
             .onFailure { e -> errorMessage = e.message ?: "내정보를 불러오지 못했습니다." }
 
         val sessionsResult = withContext(Dispatchers.IO) { ApiService.getSessions(token) }

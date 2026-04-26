@@ -86,9 +86,11 @@ fun FeedScreen(
     onProfileClick: () -> Unit = {},
 ) {
     val context = LocalContext.current
-    val token = context.getSharedPreferences("storyvenue", android.content.Context.MODE_PRIVATE)
-        .getString("access_token", "") ?: ""
+    val prefs = context.getSharedPreferences("storyvenue", android.content.Context.MODE_PRIVATE)
+    val token = prefs.getString("access_token", "") ?: ""
+    val cachedUserName = prefs.getString("user_name", "") ?: ""
 
+    var userName by remember { mutableStateOf(cachedUserName) }
     var posts by remember { mutableStateOf<List<FeedPost>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var isRefreshing by remember { mutableStateOf(false) }
@@ -102,6 +104,18 @@ fun FeedScreen(
         }
     }
 
+    suspend fun loadProfile() {
+        if (token.isBlank()) return
+        val profileResult = withContext(Dispatchers.IO) { ApiService.getProfile(token) }
+        profileResult.onSuccess { profile ->
+            userName = profile.name
+            prefs.edit()
+                .putString("user_name", profile.name)
+                .putString("user_email", profile.email)
+                .apply()
+        }
+    }
+
     suspend fun loadBadges() {
         withContext(Dispatchers.IO) {
             ApiService.getUnreadCount(token).onSuccess { hasNotifBadge = it > 0 }
@@ -112,6 +126,7 @@ fun FeedScreen(
     }
 
     LaunchedEffect(Unit) {
+        loadProfile()
         loadFeed()
         loadBadges()
         isLoading = false
@@ -129,13 +144,25 @@ fun FeedScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = "이야기마당",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = StoryVenueColors.Primary,
-                    fontFamily = SBAggroFamily,
-                )
+                Column {
+                    Text(
+                        text = "이야기마당",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = StoryVenueColors.Primary,
+                        fontFamily = SBAggroFamily,
+                    )
+                    if (userName.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "${userName}님, 오늘의 이야기를 만나보세요",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = StoryVenueColors.SubText,
+                            fontFamily = SBAggroFamily,
+                        )
+                    }
+                }
                 BellIconButton(
                     hasBadge = hasNotifBadge,
                     onClick = onNotificationClick,
@@ -162,6 +189,7 @@ fun FeedScreen(
                 onRefresh = {
                     scope.launch {
                         isRefreshing = true
+                        loadProfile()
                         loadFeed()
                         isRefreshing = false
                     }
