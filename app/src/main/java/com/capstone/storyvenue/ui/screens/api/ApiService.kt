@@ -3,6 +3,12 @@ package com.capstone.storyvenue.ui.screens
 object ApiService {
 
     // ── Auth ─────────────────────────────────────────
+    fun getKakaoAuthorizeUrl(): Result<KakaoAuthorizeData> =
+        AuthApi.getKakaoAuthorizeUrl()
+
+    fun loginWithKakaoCode(code: String, state: String): Result<AuthSessionData> =
+        AuthApi.loginWithKakaoCode(code, state)
+
     fun login(email: String, password: String): Result<Pair<String, String>> =
         AuthApi.login(email, password)
 
