@@ -65,6 +65,7 @@ data class ChatPartner(
     val userName: String,
     val avatarUrl: String? = null,
     val lastMessage: String,
+    val lastMessageAt: String?,
     val lastMessageTime: String,
     val unreadCount: Int = 0,
 )
@@ -73,7 +74,7 @@ data class ChatMessage(
     val id: String,
     val content: String,
     val isMine: Boolean,
-    val time: String,
+    val createdAt: String?,
 )
 
 // ── 채팅 목록 화면 ─────────────────────────────
@@ -222,7 +223,7 @@ fun ChatListScreen(
                                 )
                             }
                             Text(
-                                text = partner.lastMessageTime,
+                                text = formatChatListTime(partner.lastMessageAt),
                                 fontSize = 14.sp,
                                 color = StoryVenueColors.SubText,
                                 fontFamily = SBAggroFamily,
@@ -267,7 +268,7 @@ fun ChatRoomScreen(
                         id = msg.id,
                         content = msg.content,
                         isMine = msg.senderId == myUserId,
-                        time = msg.timeAgo,
+                        createdAt = msg.createdAt,
                     )
                 })
             }
@@ -343,7 +344,7 @@ fun ChatRoomScreen(
                                             id = msg.id,
                                             content = msg.content,
                                             isMine = true,
-                                            time = "방금",
+                                            createdAt = msg.createdAt,
                                         )
                                     )
                                 }
@@ -365,6 +366,7 @@ fun ChatRoomScreen(
                 CircularProgressIndicator(color = StoryVenueColors.Primary)
             }
         } else {
+            val snapshot = messages.toList()
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -373,9 +375,19 @@ fun ChatRoomScreen(
                     .padding(horizontal = 16.dp),
             ) {
                 item { Spacer(Modifier.height(8.dp)) }
-                items(messages.toList()) { message ->
-                    ChatBubble(message = message)
-                    Spacer(Modifier.height(8.dp))
+                snapshot.forEachIndexed { index, message ->
+                    val prev = snapshot.getOrNull(index - 1)
+                    val showDivider = index == 0 ||
+                        chatLocalDate(message.createdAt) != chatLocalDate(prev?.createdAt)
+                    if (showDivider) {
+                        item(key = "divider-${message.id}") {
+                            ChatDateDivider(isoString = message.createdAt)
+                        }
+                    }
+                    item(key = message.id) {
+                        ChatBubble(message = message)
+                        Spacer(Modifier.height(8.dp))
+                    }
                 }
                 item { Spacer(Modifier.height(8.dp)) }
             }
@@ -384,15 +396,48 @@ fun ChatRoomScreen(
 }
 
 @Composable
+private fun ChatDateDivider(isoString: String?) {
+    val label = formatChatDateDivider(isoString)
+    if (label.isBlank()) return
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(StoryVenueColors.Divider),
+        )
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            color = StoryVenueColors.SubText,
+            fontFamily = SBAggroFamily,
+            modifier = Modifier.padding(horizontal = 12.dp),
+        )
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(StoryVenueColors.Divider),
+        )
+    }
+}
+
+@Composable
 fun ChatBubble(message: ChatMessage) {
+    val timeLabel = formatChatTime(message.createdAt)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (message.isMine) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.Bottom,
     ) {
-        if (message.isMine) {
+        if (message.isMine && timeLabel.isNotEmpty()) {
             Text(
-                text = message.time,
+                text = timeLabel,
                 fontSize = 13.sp,
                 color = StoryVenueColors.SubText,
                 fontFamily = SBAggroFamily,
@@ -421,9 +466,9 @@ fun ChatBubble(message: ChatMessage) {
                 fontFamily = SBAggroFamily,
             )
         }
-        if (!message.isMine) {
+        if (!message.isMine && timeLabel.isNotEmpty()) {
             Text(
-                text = message.time,
+                text = timeLabel,
                 fontSize = 13.sp,
                 color = StoryVenueColors.SubText,
                 fontFamily = SBAggroFamily,

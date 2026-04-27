@@ -289,7 +289,7 @@ data class ChatMessageData(
     val id: String,
     val senderId: String,
     val content: String,
-    val timeAgo: String,
+    val createdAt: String?,
 )
 
 data class ChapterDraftData(
