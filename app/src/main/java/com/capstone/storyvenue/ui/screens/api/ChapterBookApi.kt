@@ -28,6 +28,7 @@ object ChapterBookApi {
             id = json.getString("id"),
             title = json.optString("title", ""),
             subtitle = json.optCleanString("subtitle").ifBlank { null },
+            createdAt = json.optCleanString("created_at").ifBlank { null },
             chapters = chapters,
             shared = json.optBoolean("shared", false),
             sharedPostId = json.optCleanString("shared_post_id").ifBlank { null },

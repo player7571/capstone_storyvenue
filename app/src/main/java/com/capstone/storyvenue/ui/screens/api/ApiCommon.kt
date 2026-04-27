@@ -4,7 +4,9 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.time.Instant
+import java.time.ZoneId
 import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 
 internal val API_BASE_URL: String = ApiHttp.BASE_URL
@@ -57,6 +59,23 @@ internal fun JSONObject.optCleanString(name: String): String {
 internal fun toAbsoluteUrl(pathOrUrl: String): String {
     if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) return pathOrUrl
     return if (pathOrUrl.startsWith("/")) "$API_BASE_URL$pathOrUrl" else "$API_BASE_URL/$pathOrUrl"
+}
+
+private val bookCreatedAtFormatter = DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm")
+
+internal fun formatBookCreatedAt(isoString: String?): String? {
+    if (isoString.isNullOrBlank()) return null
+    return try {
+        val zoned = try {
+            ZonedDateTime.parse(isoString)
+                .withZoneSameInstant(ZoneId.systemDefault())
+        } catch (_: Exception) {
+            Instant.parse(isoString).atZone(ZoneId.systemDefault())
+        }
+        "작성일 ${zoned.format(bookCreatedAtFormatter)}"
+    } catch (_: Exception) {
+        null
+    }
 }
 
 internal fun timeAgo(isoString: String?): String {
