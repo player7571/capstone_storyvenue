@@ -13,13 +13,15 @@ object ChatApi {
                 val list = mutableListOf<ChatPartner>()
                 for (i in 0 until arr.length()) {
                     val obj = arr.getJSONObject(i)
+                    val lastAt = obj.optCleanString("last_message_at").ifBlank { null }
                     list.add(
                         ChatPartner(
                             userId = obj.getString("user_id"),
                             userName = obj.optString("name", obj.optString("display_name", "익명")),
                             avatarUrl = obj.optCleanString("avatar_url").ifBlank { null },
                             lastMessage = obj.optString("last_message", ""),
-                            lastMessageTime = timeAgo(obj.optString("last_message_at", null)),
+                            lastMessageAt = lastAt,
+                            lastMessageTime = timeAgo(lastAt),
                             unreadCount = obj.optInt("unread_count", 0),
                         )
                     )
@@ -49,7 +51,7 @@ object ChatApi {
                             id = obj.getString("id"),
                             senderId = obj.getString("sender_id"),
                             content = obj.optString("content", ""),
-                            timeAgo = timeAgo(obj.optString("created_at", null)),
+                            createdAt = obj.optCleanString("created_at").ifBlank { null },
                         )
                     )
                 }
@@ -76,7 +78,7 @@ object ChatApi {
                         id = obj.getString("id"),
                         senderId = obj.getString("sender_id"),
                         content = obj.optString("content", ""),
-                        timeAgo = "방금",
+                        createdAt = obj.optCleanString("created_at").ifBlank { null },
                     )
                 )
             } else {

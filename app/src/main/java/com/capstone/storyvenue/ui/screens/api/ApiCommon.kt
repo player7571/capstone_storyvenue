@@ -4,10 +4,12 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
+import java.util.Locale
 
 internal val API_BASE_URL: String = ApiHttp.BASE_URL
 internal val apiClient = ApiHttp.client
@@ -96,6 +98,52 @@ internal fun timeAgo(isoString: String?): String {
         }
     } catch (_: Exception) {
         ""
+    }
+}
+
+private val chatTimeFormatter = DateTimeFormatter.ofPattern("a h:mm", Locale.KOREAN)
+private val chatListMonthDayFormatter = DateTimeFormatter.ofPattern("MM.dd")
+private val chatListFullDateFormatter = DateTimeFormatter.ofPattern("yyyy.MM.dd")
+private val chatDividerFormatter = DateTimeFormatter.ofPattern("yyyy년 M월 d일 EEEE", Locale.KOREAN)
+
+private fun parseChatZdt(isoString: String?): ZonedDateTime? {
+    if (isoString.isNullOrBlank()) return null
+    return try {
+        ZonedDateTime.parse(isoString).withZoneSameInstant(ZoneId.systemDefault())
+    } catch (_: Exception) {
+        try {
+            Instant.parse(isoString).atZone(ZoneId.systemDefault())
+        } catch (_: Exception) {
+            null
+        }
+    }
+}
+
+internal fun chatLocalDate(isoString: String?): LocalDate? = parseChatZdt(isoString)?.toLocalDate()
+
+internal fun formatChatTime(isoString: String?): String =
+    parseChatZdt(isoString)?.format(chatTimeFormatter).orEmpty()
+
+internal fun formatChatListTime(isoString: String?): String {
+    val zdt = parseChatZdt(isoString) ?: return ""
+    val today = LocalDate.now(ZoneId.systemDefault())
+    val date = zdt.toLocalDate()
+    return when {
+        date == today -> zdt.format(chatTimeFormatter)
+        date == today.minusDays(1) -> "어제"
+        date.year == today.year -> date.format(chatListMonthDayFormatter)
+        else -> date.format(chatListFullDateFormatter)
+    }
+}
+
+internal fun formatChatDateDivider(isoString: String?): String {
+    val zdt = parseChatZdt(isoString) ?: return ""
+    val today = LocalDate.now(ZoneId.systemDefault())
+    val date = zdt.toLocalDate()
+    return when {
+        date == today -> "오늘"
+        date == today.minusDays(1) -> "어제"
+        else -> zdt.format(chatDividerFormatter)
     }
 }
 
