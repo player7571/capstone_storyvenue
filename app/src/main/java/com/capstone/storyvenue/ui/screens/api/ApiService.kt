@@ -305,6 +305,7 @@ data class BookDetailData(
     val id: String,
     val title: String,
     val subtitle: String?,
+    val createdAt: String? = null,
     val chapters: List<BookChapterPayloadData> = emptyList(),
     val shared: Boolean = false,
     val sharedPostId: String? = null,

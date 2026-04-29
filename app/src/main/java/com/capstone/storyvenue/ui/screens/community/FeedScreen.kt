@@ -398,6 +398,15 @@ fun FeedDetailScreen(
                 item {
                     Spacer(Modifier.height(16.dp))
                     Text(text = post!!.title, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = StoryVenueColors.Primary, fontFamily = SBAggroFamily)
+                    formatBookCreatedAt(sharedBook?.createdAt)?.let { createdLabel ->
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = createdLabel,
+                            fontSize = 13.sp,
+                            color = StoryVenueColors.SubText,
+                            fontFamily = SBAggroFamily,
+                        )
+                    }
                     Spacer(Modifier.height(16.dp))
                     Card(
                         modifier = Modifier.fillMaxWidth(),

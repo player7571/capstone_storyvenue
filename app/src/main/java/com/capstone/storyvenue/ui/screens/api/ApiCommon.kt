@@ -63,6 +63,23 @@ internal fun toAbsoluteUrl(pathOrUrl: String): String {
     return if (pathOrUrl.startsWith("/")) "$API_BASE_URL$pathOrUrl" else "$API_BASE_URL/$pathOrUrl"
 }
 
+private val bookCreatedAtFormatter = DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm")
+
+internal fun formatBookCreatedAt(isoString: String?): String? {
+    if (isoString.isNullOrBlank()) return null
+    return try {
+        val zoned = try {
+            ZonedDateTime.parse(isoString)
+                .withZoneSameInstant(ZoneId.systemDefault())
+        } catch (_: Exception) {
+            Instant.parse(isoString).atZone(ZoneId.systemDefault())
+        }
+        "작성일 ${zoned.format(bookCreatedAtFormatter)}"
+    } catch (_: Exception) {
+        null
+    }
+}
+
 internal fun timeAgo(isoString: String?): String {
     if (isoString == null) return ""
     return try {
