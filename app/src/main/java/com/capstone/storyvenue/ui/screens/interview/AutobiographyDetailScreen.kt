@@ -172,6 +172,14 @@ fun AutobiographyDetailScreen(
                                         modifier = Modifier.padding(top = 8.dp),
                                     )
                                 }
+                                formatBookCreatedAt(currentBook.createdAt)?.let { createdLabel ->
+                                    Text(
+                                        text = createdLabel,
+                                        fontSize = 13.sp,
+                                        color = StoryVenueColors.SubText,
+                                        modifier = Modifier.padding(top = 8.dp),
+                                    )
+                                }
                             }
                             items(currentBook.chapters.sortedBy { it.sourceQuestionNo ?: Int.MAX_VALUE }) { chapter ->
                                 Card(
