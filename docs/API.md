@@ -481,6 +481,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 |---------|------|--------|------|
 | `limit` | int | 20 | 가져올 개수 |
 | `offset` | int | 0 | 건너뛸 개수 |
+| `q` | string | 없음 | 제목, 미리보기, 작성자 이름 검색어 |
 
 **응답 — 200**
 ```json
