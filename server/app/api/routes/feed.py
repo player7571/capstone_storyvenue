@@ -15,6 +15,43 @@ from app.services.safety import check_content_safety
 router = APIRouter(prefix="/feed", tags=["feed"])
 
 
+def _normalize_search_query(q: str | None) -> str:
+    """PostgREST 검색 필터에 넣기 전 검색어를 안전한 범위로 정리한다."""
+    return " ".join(str(q or "").replace(",", " ").replace("(", " ").replace(")", " ").split()).strip()
+
+
+def _search_pattern(q: str) -> str:
+    return f"%{q.replace('%', '').replace('*', '')}%"
+
+
+def _fetch_profile_ids_by_name(sb, q: str) -> list[str]:
+    if not q:
+        return []
+    result = (
+        sb.table("profiles")
+        .select("id")
+        .ilike("name", _search_pattern(q))
+        .limit(100)
+        .execute()
+    )
+    return [str(row["id"]) for row in (result.data or []) if row.get("id")]
+
+
+def _apply_feed_search(query, sb, q: str | None):
+    search = _normalize_search_query(q)
+    if not search:
+        return query
+
+    filters = [
+        f"title.ilike.{_search_pattern(search)}",
+        f"preview.ilike.{_search_pattern(search)}",
+    ]
+    author_ids = _fetch_profile_ids_by_name(sb, search)
+    if author_ids:
+        filters.append(f"user_id.in.({','.join(author_ids)})")
+    return query.or_(",".join(filters))
+
+
 def _fetch_profiles_map(sb, user_ids: list[str]) -> dict[str, dict]:
     unique_ids = list({uid for uid in user_ids if uid})
     if not unique_ids:
@@ -99,16 +136,13 @@ def _load_owned_chapter_or_404(chapter_id: UUID, user_id: str) -> dict:
 async def list_feed(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    q: str | None = Query(None, min_length=1, max_length=80),
     user_id: str = Depends(get_current_user_id),
 ):
     sb = get_supabase()
-    result = (
-        sb.table("feed_posts")
-        .select("*")
-        .order("created_at", desc=True)
-        .range(offset, offset + limit - 1)
-        .execute()
-    )
+    query = sb.table("feed_posts").select("*")
+    query = _apply_feed_search(query, sb, q)
+    result = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
     rows = result.data or []
     profiles_map = _fetch_profiles_map(sb, [row.get("user_id") for row in rows])
     comment_counts = _fetch_comment_counts(sb, [row.get("id") for row in rows])

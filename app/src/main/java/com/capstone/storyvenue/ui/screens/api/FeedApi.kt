@@ -1,5 +1,6 @@
 package com.capstone.storyvenue.ui.screens
 
+import java.net.URLEncoder
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -82,8 +83,15 @@ object FeedApi {
         }
     }
 
-    fun getFeed(token: String, limit: Int = 20, offset: Int = 0): Result<List<FeedPost>> =
-        fetchFeedList("$API_BASE_URL/feed?limit=$limit&offset=$offset", token)
+    fun getFeed(token: String, limit: Int = 20, offset: Int = 0, query: String = ""): Result<List<FeedPost>> {
+        val trimmedQuery = query.trim()
+        val searchParam = if (trimmedQuery.isBlank()) {
+            ""
+        } else {
+            "&q=${URLEncoder.encode(trimmedQuery, "UTF-8")}"
+        }
+        return fetchFeedList("$API_BASE_URL/feed?limit=$limit&offset=$offset$searchParam", token)
+    }
 
     fun getMyFeed(token: String, limit: Int = 20, offset: Int = 0): Result<List<FeedPost>> =
         fetchFeedList("$API_BASE_URL/feed/me?limit=$limit&offset=$offset", token)
