@@ -76,12 +76,14 @@ data class FeedPost(
     val likedByMe: Boolean = false,
 )
 
-private fun buildSharedAutobiographyBody(chapters: List<BookChapterPayloadData>): String {
-    return chapters
-        .sortedBy { it.sourceQuestionNo ?: Int.MAX_VALUE }
-        .map { it.content.trim() }
-        .filter { it.isNotBlank() }
-        .joinToString(separator = "\n\n")
+private fun buildSharedAutobiographyBody(book: BookDetailData): String {
+    return book.body.ifBlank {
+        book.chapters
+            .sortedBy { it.sourceQuestionNo ?: Int.MAX_VALUE }
+            .map { it.content.trim() }
+            .filter { it.isNotBlank() }
+            .joinToString(separator = "\n\n")
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -421,10 +423,10 @@ fun FeedDetailScreen(
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(containerColor = StoryVenueColors.Surface),
                         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                    ) {
-                        val currentBook = sharedBook
+                        ) {
+                            val currentBook = sharedBook
                         if (currentBook != null) {
-                            val autobiographyBody = buildSharedAutobiographyBody(currentBook.chapters)
+                            val autobiographyBody = buildSharedAutobiographyBody(currentBook)
                             Column(modifier = Modifier.padding(20.dp)) {
                                 currentBook.subtitle?.takeIf { it.isNotBlank() }?.let { subtitle ->
                                     Text(

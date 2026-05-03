@@ -30,7 +30,7 @@ object Routes {
     const val SIGNUP          = "signup"
     const val HOME            = "home"
     const val VOICE_INTERVIEW = "voice_interview?sessionId={sessionId}"
-    const val CHAPTER_DRAFT   = "chapter_draft/{sessionId}?questionNo={questionNo}&chapterType={chapterType}&allowBasic={allowBasic}&autoGenerate={autoGenerate}"
+    const val CHAPTER_DRAFT   = "chapter_draft/{sessionId}?chapterId={chapterId}&questionNo={questionNo}&chapterType={chapterType}&allowBasic={allowBasic}&autoGenerate={autoGenerate}"
     const val BOOK_PREVIEW    = "book_preview/{sessionId}"
     const val AUTOBIOGRAPHY_DETAIL = "autobiography_detail/{bookId}"
     const val FEED            = "feed"
@@ -47,14 +47,16 @@ object Routes {
         if (sessionId.isNullOrBlank()) "voice_interview" else "voice_interview?sessionId=$sessionId"
     fun chapterDraft(
         sessionId: String,
+        chapterId: String? = null,
         questionNo: Int? = null,
         chapterType: String? = null,
         allowBasic: Boolean = false,
         autoGenerate: Boolean = false,
     ): String {
+        val safeChapterId = chapterId ?: ""
         val safeQuestionNo = questionNo ?: -1
         val safeChapterType = chapterType ?: ""
-        return "chapter_draft/$sessionId?questionNo=$safeQuestionNo&chapterType=$safeChapterType&allowBasic=$allowBasic&autoGenerate=$autoGenerate"
+        return "chapter_draft/$sessionId?chapterId=$safeChapterId&questionNo=$safeQuestionNo&chapterType=$safeChapterType&allowBasic=$allowBasic&autoGenerate=$autoGenerate"
     }
     fun bookPreview(sessionId: String) = "book_preview/$sessionId"
     fun autobiographyDetail(bookId: String) = "autobiography_detail/$bookId"
@@ -130,6 +132,10 @@ fun StoryVenueNavGraph(
                     type = NavType.IntType
                     defaultValue = -1
                 },
+                navArgument("chapterId") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
                 navArgument("chapterType") {
                     type = NavType.StringType
                     defaultValue = ""
@@ -145,12 +151,14 @@ fun StoryVenueNavGraph(
             ),
         ) { back ->
             val sessionId = back.arguments?.getString("sessionId") ?: ""
+            val chapterId = back.arguments?.getString("chapterId")?.takeIf { it.isNotBlank() }
             val questionNo = back.arguments?.getInt("questionNo")?.takeIf { it > 0 }
             val chapterType = back.arguments?.getString("chapterType")?.takeIf { it.isNotBlank() }
             val allowBasic = back.arguments?.getBoolean("allowBasic") ?: false
             val autoGenerate = back.arguments?.getBoolean("autoGenerate") ?: false
             ChapterDraftScreen(
                 sessionId = sessionId,
+                chapterId = chapterId,
                 questionNo = questionNo,
                 chapterType = chapterType,
                 allowBasic = allowBasic,
@@ -177,6 +185,16 @@ fun StoryVenueNavGraph(
                 },
                 onPostToFeed = {
                     navController.navigate(Routes.FEED)
+                },
+                onChapterClick = { chapter ->
+                    navController.navigate(
+                        Routes.chapterDraft(
+                            sessionId = sessionId,
+                            chapterId = chapter.id,
+                            questionNo = chapter.sourceQuestionNo,
+                            autoGenerate = false,
+                        )
+                    )
                 },
             )
         }

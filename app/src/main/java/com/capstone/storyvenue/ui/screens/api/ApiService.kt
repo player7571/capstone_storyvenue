@@ -102,6 +102,14 @@ object ApiService {
         questionNo = questionNo,
     )
 
+    fun getChapter(
+        token: String,
+        chapterId: String,
+    ): Result<GeneratedChapterData> = ChapterBookApi.getChapter(
+        token = token,
+        chapterId = chapterId,
+    )
+
     // ── Chapters / Books ─────────────────────────────
     fun listChapters(
         token: String,
@@ -113,6 +121,14 @@ object ApiService {
 
     fun deleteChapter(token: String, chapterId: String): Result<Unit> =
         ChapterBookApi.deleteChapter(token, chapterId)
+
+    fun updateChapter(
+        token: String,
+        chapterId: String,
+        title: String,
+        content: String,
+    ): Result<GeneratedChapterData> =
+        ChapterBookApi.updateChapter(token, chapterId, title, content)
 
     fun compileBook(
         token: String,
@@ -132,6 +148,15 @@ object ApiService {
 
     fun getSharedBookDetail(token: String, bookId: String): Result<BookDetailData> =
         ChapterBookApi.getSharedBookDetail(token, bookId)
+
+    fun updateBook(
+        token: String,
+        bookId: String,
+        title: String,
+        subtitle: String?,
+        body: String,
+    ): Result<BookDetailData> =
+        ChapterBookApi.updateBook(token, bookId, title, subtitle, body)
 
     fun shareBookToFeed(token: String, bookId: String): Result<BookShareResultData> =
         ChapterBookApi.shareBookToFeed(token, bookId)
@@ -307,6 +332,7 @@ data class BookDetailData(
     val subtitle: String?,
     val createdAt: String? = null,
     val chapters: List<BookChapterPayloadData> = emptyList(),
+    val body: String = "",
     val shared: Boolean = false,
     val sharedPostId: String? = null,
 )

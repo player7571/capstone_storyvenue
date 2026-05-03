@@ -432,6 +432,7 @@ fun VoiceInterviewScreen(
     val canGoNext = sessionStarted &&
         sessionType != "photo" &&
         !isInterviewComplete &&
+        currentProgress < totalQuestions &&
         !isPreparingSession &&
         !isUploadingPhoto &&
         !isUploadingAudio &&
