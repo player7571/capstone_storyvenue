@@ -13,7 +13,7 @@ from app.api.schemas.book import (
     BookSummaryResponse,
 )
 from app.db.supabase import get_supabase
-from app.services import generate_autobiography_chapters, generate_book_subtitle
+from app.services import generate_autobiography_book, generate_book_subtitle
 from app.services.safety import check_content_safety
 
 router = APIRouter(prefix="/book", tags=["book"])
@@ -200,11 +200,12 @@ def _generate_and_store_autobiography(body: AutobiographyCreateRequest, user_id:
     )
 
     try:
-        polished_chapters = generate_autobiography_chapters(
+        generated_book = generate_autobiography_book(
             book_title=body.title,
             chapters=ordered_source_chapters,
         )
-        subtitle = generate_book_subtitle(
+        polished_chapters = generated_book["chapters"]
+        subtitle = str(generated_book.get("subtitle") or "").strip() or generate_book_subtitle(
             book_title=body.title,
             chapter_titles=[chapter["title"] for chapter in polished_chapters],
         )

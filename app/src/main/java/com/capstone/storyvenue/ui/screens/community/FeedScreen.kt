@@ -76,6 +76,14 @@ data class FeedPost(
     val likedByMe: Boolean = false,
 )
 
+private fun buildSharedAutobiographyBody(chapters: List<BookChapterPayloadData>): String {
+    return chapters
+        .sortedBy { it.sourceQuestionNo ?: Int.MAX_VALUE }
+        .map { it.content.trim() }
+        .filter { it.isNotBlank() }
+        .joinToString(separator = "\n\n")
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeedScreen(
@@ -416,6 +424,7 @@ fun FeedDetailScreen(
                     ) {
                         val currentBook = sharedBook
                         if (currentBook != null) {
+                            val autobiographyBody = buildSharedAutobiographyBody(currentBook.chapters)
                             Column(modifier = Modifier.padding(20.dp)) {
                                 currentBook.subtitle?.takeIf { it.isNotBlank() }?.let { subtitle ->
                                     Text(
@@ -427,36 +436,13 @@ fun FeedDetailScreen(
                                     )
                                     Spacer(Modifier.height(12.dp))
                                 }
-                                currentBook.chapters
-                                    .sortedBy { it.sourceQuestionNo ?: Int.MAX_VALUE }
-                                    .forEachIndexed { index, chapter ->
-                                        Text(
-                                            text = chapter.sourceQuestionNo?.let { "이야기 $it" } ?: "자유 이야기",
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = StoryVenueColors.SubText,
-                                            fontFamily = SBAggroFamily,
-                                        )
-                                        Spacer(Modifier.height(4.dp))
-                                        Text(
-                                            text = chapter.title,
-                                            fontSize = 19.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = StoryVenueColors.OnSurface,
-                                            fontFamily = SBAggroFamily,
-                                        )
-                                        Spacer(Modifier.height(10.dp))
-                                        Text(
-                                            text = chapter.content,
-                                            fontSize = 17.sp,
-                                            color = StoryVenueColors.OnSurface,
-                                            fontFamily = SBAggroFamily,
-                                            lineHeight = 28.sp,
-                                        )
-                                        if (index < currentBook.chapters.lastIndex) {
-                                            Spacer(Modifier.height(20.dp))
-                                        }
-                                    }
+                                Text(
+                                    text = autobiographyBody.ifBlank { post!!.preview },
+                                    fontSize = 17.sp,
+                                    color = StoryVenueColors.OnSurface,
+                                    fontFamily = SBAggroFamily,
+                                    lineHeight = 28.sp,
+                                )
                             }
                         } else {
                             Text(

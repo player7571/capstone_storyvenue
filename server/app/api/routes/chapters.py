@@ -141,17 +141,11 @@ def _load_voice_question_story_context(
             detail="이 질문에는 아직 사용자 답변이 없습니다.",
         )
 
-    question = get_interview_question(question_no)
     current_answer_text = "\n".join(current_answers).strip()
     history: list[dict[str, str]] = [
         {
             "role": "user",
-            "content": (
-                "[현재 질문 답변]\n"
-                f"질문: {question.main_question}\n"
-                f"힌트: {question.hint}\n"
-                f"답변: {current_answer_text}"
-            ),
+            "content": current_answer_text,
         },
     ]
 

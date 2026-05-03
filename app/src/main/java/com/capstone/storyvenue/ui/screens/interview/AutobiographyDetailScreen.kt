@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -47,6 +46,14 @@ import com.capstone.storyvenue.ui.theme.StoryVenueColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private fun buildAutobiographyBody(chapters: List<BookChapterPayloadData>): String {
+    return chapters
+        .sortedBy { it.sourceQuestionNo ?: Int.MAX_VALUE }
+        .map { it.content.trim() }
+        .filter { it.isNotBlank() }
+        .joinToString(separator = "\n\n")
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -152,6 +159,7 @@ fun AutobiographyDetailScreen(
                     book == null -> CenteredMessage("자서전을 찾을 수 없어요.")
                     else -> {
                         val currentBook = book!!
+                        val autobiographyBody = buildAutobiographyBody(currentBook.chapters)
                         LazyColumn(
                             verticalArrangement = Arrangement.spacedBy(14.dp),
                             contentPadding = PaddingValues(vertical = 16.dp),
@@ -181,29 +189,16 @@ fun AutobiographyDetailScreen(
                                     )
                                 }
                             }
-                            items(currentBook.chapters.sortedBy { it.sourceQuestionNo ?: Int.MAX_VALUE }) { chapter ->
+                            item {
                                 Card(
                                     shape = RoundedCornerShape(16.dp),
                                     colors = CardDefaults.cardColors(containerColor = StoryVenueColors.Surface),
                                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                                     modifier = Modifier.fillMaxWidth(),
                                 ) {
-                                    Column(modifier = Modifier.padding(18.dp)) {
+                                    Column(modifier = Modifier.padding(20.dp)) {
                                         Text(
-                                            text = chapter.sourceQuestionNo?.let { "이야기 $it" } ?: "자유 이야기",
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = StoryVenueColors.SubText,
-                                        )
-                                        Text(
-                                            text = chapter.title,
-                                            fontSize = 20.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = StoryVenueColors.OnSurface,
-                                            modifier = Modifier.padding(top = 6.dp, bottom = 12.dp),
-                                        )
-                                        Text(
-                                            text = chapter.content,
+                                            text = autobiographyBody.ifBlank { "자서전 본문이 아직 비어 있어요." },
                                             fontSize = 16.sp,
                                             lineHeight = 26.sp,
                                             color = StoryVenueColors.OnSurface,
