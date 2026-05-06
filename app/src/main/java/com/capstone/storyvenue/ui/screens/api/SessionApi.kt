@@ -7,6 +7,21 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object SessionApi {
+    private fun parsePhotoAttachment(json: JSONObject?): PhotoAttachmentData? {
+        if (json == null) return null
+        return PhotoAttachmentData(
+            artifactId = json.optString("artifact_id", ""),
+            photoUrl = json.optString("photo_url", ""),
+            linkedQuestionNo = if (json.has("linked_question_no") && !json.isNull("linked_question_no")) {
+                json.optInt("linked_question_no")
+            } else {
+                null
+            },
+            aiMessage = json.optCleanString("ai_message").ifBlank { null },
+            createdAt = json.optCleanString("created_at").ifBlank { null },
+        )
+    }
+
     fun createSession(token: String, title: String, theme: String): Result<SessionData> {
         return try {
             val payload = JSONObject().apply {
@@ -82,12 +97,13 @@ object SessionApi {
         }
     }
 
-    fun createPhotoSession(
+    fun attachPhotoToSession(
         token: String,
+        sessionId: String,
         imageBytes: ByteArray,
         contentType: String,
         fileName: String,
-    ): Result<PhotoSessionStartData> {
+    ): Result<PhotoAttachmentData> {
         return try {
             val mediaType = ApiHttp.mediaTypeOrDefault(contentType)
             val multipartBody = MultipartBody.Builder()
@@ -100,7 +116,7 @@ object SessionApi {
                 .build()
 
             val request = Request.Builder()
-                .url("$API_BASE_URL/sessions/photo")
+                .url("$API_BASE_URL/sessions/$sessionId/photos")
                 .addHeader("Authorization", "Bearer $token")
                 .post(multipartBody)
                 .build()
@@ -108,17 +124,11 @@ object SessionApi {
             val response = apiClient.newCall(request).execute()
             val body = response.body?.string() ?: ""
             if (response.isSuccessful) {
-                val json = JSONObject(body)
-                Result.success(
-                    PhotoSessionStartData(
-                        sessionId = json.getString("session_id"),
-                        photoUrl = json.optString("photo_url", ""),
-                        aiMessage = json.optString("ai_message", ""),
-                        createdAt = json.optString("created_at", ""),
-                    )
-                )
+                val parsed = parsePhotoAttachment(JSONObject(body))
+                    ?: throw Exception("사진 첨부 응답을 읽지 못했습니다.")
+                Result.success(parsed)
             } else {
-                Result.failure(Exception(parseErrorMessage(body, "사진 문답 시작에 실패했습니다")))
+                Result.failure(Exception(parseErrorMessage(body, "사진 첨부에 실패했습니다")))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -133,11 +143,14 @@ object SessionApi {
             val body = response.body?.string() ?: ""
             if (response.isSuccessful) {
                 val json = JSONObject(body)
+                val activePhoto = parsePhotoAttachment(json.optJSONObject("active_photo"))
                 Result.success(
                     SessionDetailData(
                         id = json.getString("id"),
                         sessionType = json.optCleanString("session_type").ifBlank { "voice" },
-                        photoUrl = json.optCleanString("photo_url").ifBlank { null },
+                        photoUrl = activePhoto?.photoUrl ?: json.optCleanString("photo_url").ifBlank { null },
+                        activePhotoArtifactId = activePhoto?.artifactId,
+                        activePhotoLinkedQuestionNo = activePhoto?.linkedQuestionNo,
                         status = json.optCleanString("status"),
                         interviewState = parseInterviewState(json.optJSONObject("interview_state")),
                     )

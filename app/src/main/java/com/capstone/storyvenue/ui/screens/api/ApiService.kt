@@ -38,13 +38,14 @@ object ApiService {
     fun deleteSession(token: String, sessionId: String): Result<Unit> =
         SessionApi.deleteSession(token, sessionId)
 
-    fun createPhotoSession(
+    fun attachPhotoToSession(
         token: String,
+        sessionId: String,
         imageBytes: ByteArray,
         contentType: String,
         fileName: String,
-    ): Result<PhotoSessionStartData> =
-        SessionApi.createPhotoSession(token, imageBytes, contentType, fileName)
+    ): Result<PhotoAttachmentData> =
+        SessionApi.attachPhotoToSession(token, sessionId, imageBytes, contentType, fileName)
 
     fun getSessionDetail(token: String, sessionId: String): Result<SessionDetailData> =
         SessionApi.getSessionDetail(token, sessionId)
@@ -255,17 +256,20 @@ data class VoiceTurnData(
     val interviewState: InterviewPromptData? = null,
 )
 
-data class PhotoSessionStartData(
-    val sessionId: String,
+data class PhotoAttachmentData(
+    val artifactId: String,
     val photoUrl: String,
-    val aiMessage: String,
-    val createdAt: String,
+    val linkedQuestionNo: Int? = null,
+    val aiMessage: String? = null,
+    val createdAt: String? = null,
 )
 
 data class SessionDetailData(
     val id: String,
     val sessionType: String,
     val photoUrl: String?,
+    val activePhotoArtifactId: String? = null,
+    val activePhotoLinkedQuestionNo: Int? = null,
     val status: String,
     val interviewState: InterviewPromptData? = null,
 )

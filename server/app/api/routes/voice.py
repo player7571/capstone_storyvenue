@@ -23,7 +23,6 @@ from app.services.interview import (
     serialize_voice_interview_state,
 )
 from app.services.adaptive_interview import process_voice_interview_answer
-from app.services.photo_interview import generate_photo_follow_up_message
 
 router = APIRouter(prefix="/voice", tags=["voice"])
 
@@ -32,7 +31,6 @@ INTERVIEWER_SYSTEM_PROMPT = (
     "사용자의 이야기를 깊이 있게 끌어내세요."
 )
 AUDIO_CACHE_DIR = Path(__file__).resolve().parents[3] / ".generated-audio"
-PHOTO_SESSION_TYPE = "photo"
 VOICE_COMPLETED_STATUS = "completed"
 
 
@@ -315,7 +313,6 @@ def _save_tts_file(session_id: UUID, audio_bytes: bytes) -> str:
 def _run_user_turn(
     session_id: UUID,
     user_id: str,
-    session_type: str,
     user_text: str,
     source_type: str,
 ) -> tuple[str, str, str | None, str | None, InterviewStateResponse | None]:
@@ -323,39 +320,33 @@ def _run_user_turn(
     reason_code = None
     interview_state = None
 
-    if session_type == PHOTO_SESSION_TYPE:
-        _insert_session_message(session_id, "user", user_text)
-        history = _load_conversation_history(session_id)
-        assistant_text = generate_photo_follow_up_message(history)
-        display_user_text = user_text
-    else:
-        current_state = _load_voice_interview_state(session_id)
-        if current_state.is_interview_complete:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="이미 모든 질문이 완료되었습니다.",
-            )
+    current_state = _load_voice_interview_state(session_id)
+    if current_state.is_interview_complete:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="이미 모든 질문이 완료되었습니다.",
+        )
 
-        outcome = process_voice_interview_answer(current_state, user_text)
-        assistant_text = outcome.assistant_text
-        decision = outcome.decision
-        reason_code = outcome.reason_code
-        interview_state = InterviewStateResponse(**outcome.prompt_state.model_dump())
-        if _should_persist_user_turn(decision, reason_code):
-            _insert_session_message(session_id, "user", user_text)
-            try:
-                append_question_answer_record(
-                    session_id=session_id,
-                    question_no=current_state.current_question_no,
-                    user_text=user_text,
-                    source_type=source_type,
-                )
-            except Exception:
-                pass
-        _save_voice_interview_state(session_id, outcome.next_state)
-        if outcome.next_state.is_interview_complete:
-            _update_voice_session_status(session_id, user_id, VOICE_COMPLETED_STATUS)
-        display_user_text = user_text if _should_echo_user_text(reason_code) else ""
+    outcome = process_voice_interview_answer(current_state, user_text)
+    assistant_text = outcome.assistant_text
+    decision = outcome.decision
+    reason_code = outcome.reason_code
+    interview_state = InterviewStateResponse(**outcome.prompt_state.model_dump())
+    if _should_persist_user_turn(decision, reason_code):
+        _insert_session_message(session_id, "user", user_text)
+        try:
+            append_question_answer_record(
+                session_id=session_id,
+                question_no=current_state.current_question_no,
+                user_text=user_text,
+                source_type=source_type,
+            )
+        except Exception:
+            pass
+    _save_voice_interview_state(session_id, outcome.next_state)
+    if outcome.next_state.is_interview_complete:
+        _update_voice_session_status(session_id, user_id, VOICE_COMPLETED_STATUS)
+    display_user_text = user_text if _should_echo_user_text(reason_code) else ""
 
     _insert_session_message(session_id, "assistant", assistant_text)
     return display_user_text, assistant_text, decision, reason_code, interview_state
@@ -370,14 +361,12 @@ async def voice_turn(
     session = _get_session_or_404(session_id, user_id)
 
     try:
-        session_type = str(session.get("session_type") or "voice").strip().lower()
         audio_bytes = await audio_file.read()
         raw_user_text = _transcribe_audio(audio_bytes, audio_file.filename)
         user_text = _normalize_stt_text(raw_user_text)
         display_user_text, assistant_text, decision, reason_code, interview_state = _run_user_turn(
             session_id=session_id,
             user_id=user_id,
-            session_type=session_type,
             user_text=user_text,
             source_type="voice",
         )
@@ -416,11 +405,9 @@ async def voice_text_turn(
         )
 
     try:
-        session_type = str(session.get("session_type") or "voice").strip().lower()
         display_user_text, assistant_text, decision, reason_code, interview_state = _run_user_turn(
             session_id=session_id,
             user_id=user_id,
-            session_type=session_type,
             user_text=cleaned_text,
             source_type="text",
         )

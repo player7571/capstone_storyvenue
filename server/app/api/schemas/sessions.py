@@ -32,6 +32,14 @@ class InterviewStateResponse(BaseModel):
     story_target_is_current_question: bool = True
 
 
+class PhotoAttachmentResponse(BaseModel):
+    artifact_id: UUID
+    photo_url: str
+    linked_question_no: int | None = None
+    ai_message: str | None = None
+    created_at: datetime
+
+
 class SessionResponse(BaseModel):
     id: UUID
     user_id: UUID
@@ -41,6 +49,7 @@ class SessionResponse(BaseModel):
     photo_url: str | None = None
     session_type: str | None = None
     created_at: datetime
+    active_photo: PhotoAttachmentResponse | None = None
     interview_state: InterviewStateResponse | None = None
 
 
@@ -52,30 +61,3 @@ class SessionSummaryResponse(BaseModel):
     status: str | None = None
     session_type: str | None = None
     created_at: datetime
-
-
-class PhotoSessionStartResponse(BaseModel):
-    session_id: UUID
-    photo_url: str
-    ai_message: str
-    created_at: datetime
-
-
-class PhotoSessionReplyRequest(BaseModel):
-    content: str = Field(min_length=1, max_length=4000)
-
-
-class PhotoSessionReplyResponse(BaseModel):
-    user_message_id: UUID
-    ai_message: str
-    ai_message_id: UUID
-
-
-class PhotoSessionEndRequest(BaseModel):
-    extract_memories: bool = False
-
-
-class PhotoSessionEndResponse(BaseModel):
-    session_id: UUID
-    status: str
-    memories_created: int = 0
