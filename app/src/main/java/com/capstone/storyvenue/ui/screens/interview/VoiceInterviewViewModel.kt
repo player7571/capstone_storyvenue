@@ -7,6 +7,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 data class VoiceInterviewUiState(
     val sessionId: String? = null,
@@ -29,6 +32,11 @@ data class VoiceInterviewUiState(
     val isRecording: Boolean = false,
     val isPlayingAudio: Boolean = false,
 )
+
+private fun buildViewModelVoiceSessionTitle(): String {
+    val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.KOREA)
+    return "음성 문답 ${formatter.format(Date())}"
+}
 
 class VoiceInterviewViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(VoiceInterviewUiState())
@@ -268,7 +276,7 @@ class VoiceInterviewViewModel : ViewModel() {
         _uiState.update { it.copy(isUploadingPhoto = true, errorMessage = null) }
         val ensuredSessionId = _uiState.value.sessionId ?: ensureVoiceSession(
             token = token,
-            title = buildVoiceSessionTitle(),
+            title = buildViewModelVoiceSessionTitle(),
         ).getOrNull()
         if (ensuredSessionId.isNullOrBlank()) {
             _uiState.update {
