@@ -43,8 +43,15 @@ class BookSummaryResponse(BaseModel):
     created_at: datetime
 
 
+class BookUpdateRequest(BaseModel):
+    title: str = Field(min_length=1)
+    subtitle: str | None = None
+    body: str = Field(min_length=1)
+
+
 class BookDetailResponse(BookSummaryResponse):
     user_id: UUID
     chapters: list[BookChapterPayload] = Field(default_factory=list)
+    body: str = ""
     shared: bool = False
     shared_post_id: UUID | None = None

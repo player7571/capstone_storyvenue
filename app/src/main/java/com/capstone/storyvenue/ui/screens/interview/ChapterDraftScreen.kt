@@ -2,6 +2,7 @@ package com.capstone.storyvenue.ui.screens
 
 import android.content.Context
 import android.util.Log
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -131,6 +132,38 @@ suspend fun fetchLatestChapterDraft(
     }
 }
 
+suspend fun fetchChapterDraft(
+    chapterId: String,
+    token: String,
+): Result<ChapterDraft> = withContext(Dispatchers.IO) {
+    if (chapterId.isBlank()) {
+        return@withContext Result.failure(Exception("초안 정보가 없습니다."))
+    }
+    if (token.isBlank()) {
+        return@withContext Result.failure(Exception("로그인이 필요합니다."))
+    }
+
+    return@withContext try {
+        val result = ApiService.getChapter(
+            token = token,
+            chapterId = chapterId,
+        )
+        result.map { chapter ->
+            ChapterDraft(
+                id = chapter.id,
+                chapterNumber = chapter.sourceQuestionNo ?: 1,
+                chapterType = chapter.chapterType,
+                title = chapter.title.ifBlank { "이야기 ${chapter.sourceQuestionNo ?: 1}" },
+                content = chapter.content,
+                storyQualityAtGeneration = chapter.storyQualityAtGeneration,
+            )
+        }
+    } catch (e: Exception) {
+        Log.w("ChapterDraft", "초안 조회 실패: ${e.message}")
+        Result.failure(e)
+    }
+}
+
 private fun dummyChapter(number: Int) = ChapterDraft(
     id = "preview-$number",
     chapterNumber = number,
@@ -161,6 +194,7 @@ private fun dummyChapter(number: Int) = ChapterDraft(
 @Composable
 fun ChapterDraftScreen(
     sessionId: String     = "",
+    chapterId: String?    = null,
     questionNo: Int?      = null,
     chapterType: String?  = null,
     allowBasic: Boolean   = false,
@@ -178,14 +212,38 @@ fun ChapterDraftScreen(
     var pendingAutoGenerate by rememberSaveable(sessionId, questionNo, chapterType, allowBasic) {
         mutableStateOf(autoGenerate)
     }
+    var isEditMode by rememberSaveable { mutableStateOf(false) }
+    var editingTitle by rememberSaveable { mutableStateOf("") }
+    var editingContent by rememberSaveable { mutableStateOf("") }
+    var isSaving by remember { mutableStateOf(false) }
 
-    suspend fun loadLatestDraftState() {
+    val loadedDraft = (screenState as? ChapterDraftScreenState.Loaded)?.draft
+    LaunchedEffect(loadedDraft?.id, loadedDraft?.title, loadedDraft?.content, isEditMode) {
+        if (loadedDraft != null && !isEditMode) {
+            editingTitle = loadedDraft.title
+            editingContent = loadedDraft.content
+        }
+    }
+
+    suspend fun loadDraftState() {
         screenState = ChapterDraftScreenState.Loading
-        val result = fetchLatestChapterDraft(
-            sessionId = sessionId,
-            questionNo = questionNo,
-            token = token,
-        )
+        val result: Result<ChapterDraft?> = if (!chapterId.isNullOrBlank()) {
+            val chapterResult = fetchChapterDraft(
+                chapterId = chapterId,
+                token = token,
+            )
+            if (chapterResult.isSuccess) {
+                Result.success(chapterResult.getOrNull())
+            } else {
+                Result.failure(chapterResult.exceptionOrNull() ?: Exception("초안 조회 실패"))
+            }
+        } else {
+            fetchLatestChapterDraft(
+                sessionId = sessionId,
+                questionNo = questionNo,
+                token = token,
+            )
+        }
         screenState = if (result.isSuccess) {
             result.getOrNull()?.let { ChapterDraftScreenState.Loaded(it) }
                 ?: ChapterDraftScreenState.Empty
@@ -207,6 +265,7 @@ fun ChapterDraftScreen(
         )
         screenState = if (result.isSuccess) {
             pendingAutoGenerate = false
+            isEditMode = false
             ChapterDraftScreenState.Loaded(result.getOrNull()!!)
         } else {
             ChapterDraftScreenState.Error(
@@ -215,12 +274,55 @@ fun ChapterDraftScreen(
         }
     }
 
+    suspend fun saveDraftChanges() {
+        val draft = (screenState as? ChapterDraftScreenState.Loaded)?.draft ?: return
+        val title = editingTitle.trim()
+        val content = editingContent.trim()
+        if (title.isBlank() || content.isBlank()) {
+            Toast.makeText(context, "제목과 본문을 모두 입력해주세요.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        isSaving = true
+        val result = withContext(Dispatchers.IO) {
+            ApiService.updateChapter(
+                token = token,
+                chapterId = draft.id,
+                title = title,
+                content = content,
+            )
+        }
+        isSaving = false
+
+        if (result.isSuccess) {
+            val updated = result.getOrNull()!!
+            screenState = ChapterDraftScreenState.Loaded(
+                ChapterDraft(
+                    id = updated.id,
+                    chapterNumber = updated.sourceQuestionNo ?: draft.chapterNumber,
+                    chapterType = updated.chapterType.ifBlank { draft.chapterType },
+                    title = updated.title.ifBlank { title },
+                    content = updated.content,
+                    storyQualityAtGeneration = updated.storyQualityAtGeneration ?: draft.storyQualityAtGeneration,
+                )
+            )
+            isEditMode = false
+            Toast.makeText(context, "초안을 저장했어요.", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(
+                context,
+                result.exceptionOrNull()?.message ?: "초안 저장에 실패했습니다.",
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
+
     // 최초 로드
-    LaunchedEffect(sessionId, questionNo, chapterType, allowBasic) {
+    LaunchedEffect(sessionId, chapterId, questionNo, chapterType, allowBasic) {
         if (pendingAutoGenerate) {
             generateDraftState()
         } else {
-            loadLatestDraftState()
+            loadDraftState()
         }
     }
 
@@ -283,11 +385,18 @@ fun ChapterDraftScreen(
                             if (pendingAutoGenerate) {
                                 generateDraftState()
                             } else {
-                                loadLatestDraftState()
+                                loadDraftState()
                             }
                         }
                     })
-                    is ChapterDraftScreenState.Loaded -> DraftContent(draft = state.draft)
+                    is ChapterDraftScreenState.Loaded -> DraftContent(
+                        draft = state.draft,
+                        isEditMode = isEditMode,
+                        editingTitle = editingTitle,
+                        editingContent = editingContent,
+                        onTitleChange = { editingTitle = it },
+                        onContentChange = { editingContent = it },
+                    )
                 }
             }
 
@@ -301,8 +410,22 @@ fun ChapterDraftScreen(
                 )
                 is ChapterDraftScreenState.Error -> Spacer(Modifier.height(24.dp))
                 is ChapterDraftScreenState.Loaded -> BottomButtons(
-                    isLoading = false,
+                    isLoading = isSaving,
+                    isEditMode = isEditMode,
                     onRegenerate = ::regenerate,
+                    onEdit = {
+                        editingTitle = state.draft.title
+                        editingContent = state.draft.content
+                        isEditMode = true
+                    },
+                    onCancelEdit = {
+                        editingTitle = state.draft.title
+                        editingContent = state.draft.content
+                        isEditMode = false
+                    },
+                    onSave = {
+                        scope.launch { saveDraftChanges() }
+                    },
                     onAddToBook = {
                         Log.d("ChapterDraft", "책에 추가 클릭 — title=${state.draft.title}, sessionId=$sessionId, chapterId=${state.draft.id}")
                         onAddToBook(sessionId)
@@ -319,11 +442,22 @@ fun ChapterDraftScreen(
 // ──────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun DraftContent(draft: ChapterDraft) {
+private fun DraftContent(
+    draft: ChapterDraft,
+    isEditMode: Boolean,
+    editingTitle: String,
+    editingContent: String,
+    onTitleChange: (String) -> Unit,
+    onContentChange: (String) -> Unit,
+) {
     Column {
         // 챕터 제목
         Text(
-            text       = "이야기 ${draft.chapterNumber} : ${draft.title}\n이야기가 정리되었습니다!",
+            text       = if (isEditMode) {
+                "이야기 ${draft.chapterNumber} : 초안을 수정하고 있어요"
+            } else {
+                "이야기 ${draft.chapterNumber} : ${draft.title}\n이야기가 정리되었습니다!"
+            },
             fontSize   = 22.sp,
             fontWeight = FontWeight.Bold,
             color      = StoryVenueColors.Primary,
@@ -331,23 +465,46 @@ private fun DraftContent(draft: ChapterDraft) {
             modifier   = Modifier.padding(bottom = 20.dp)
         )
 
-        // 본문 카드
-        Card(
-            shape  = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = StoryVenueColors.Surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                text       = draft.content,
-                fontSize   = 17.sp,
-                color      = StoryVenueColors.OnSurface,
-                lineHeight = 26.sp,
-                modifier   = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(20.dp)
-            )
+        if (isEditMode) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = editingTitle,
+                    onValueChange = onTitleChange,
+                    label = { Text("제목") },
+                    singleLine = false,
+                    maxLines = 3,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                )
+                OutlinedTextField(
+                    value = editingContent,
+                    onValueChange = onContentChange,
+                    label = { Text("본문") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 320.dp),
+                    shape = RoundedCornerShape(16.dp),
+                )
+            }
+        } else {
+            // 본문 카드
+            Card(
+                shape  = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = StoryVenueColors.Surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text       = draft.content,
+                    fontSize   = 17.sp,
+                    color      = StoryVenueColors.OnSurface,
+                    lineHeight = 26.sp,
+                    modifier   = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(20.dp)
+                )
+            }
         }
     }
 }
@@ -445,7 +602,11 @@ private fun EmptyBottomButtons(
 @Composable
 private fun BottomButtons(
     isLoading: Boolean,
+    isEditMode: Boolean,
     onRegenerate: () -> Unit,
+    onEdit: () -> Unit,
+    onCancelEdit: () -> Unit,
+    onSave: () -> Unit,
     onAddToBook: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -453,49 +614,116 @@ private fun BottomButtons(
         modifier            = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // 다시 생성
-        OutlinedButton(
-            onClick  = onRegenerate,
-            enabled  = !isLoading,
-            shape    = RoundedCornerShape(50.dp),
-            colors   = ButtonDefaults.outlinedButtonColors(
-                containerColor         = StoryVenueColors.Surface,
-                contentColor           = StoryVenueColors.OnSurface,
-                disabledContainerColor = StoryVenueColors.Divider,
-                disabledContentColor   = StoryVenueColors.SubText
-            ),
-            border = null,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
-        ) {
-            Text(
-                text       = "다시 생성",
-                fontSize   = 18.sp,
-                fontWeight = FontWeight.Medium
-            )
-        }
+        if (isEditMode) {
+            OutlinedButton(
+                onClick  = onCancelEdit,
+                enabled  = !isLoading,
+                shape    = RoundedCornerShape(50.dp),
+                colors   = ButtonDefaults.outlinedButtonColors(
+                    containerColor         = StoryVenueColors.Surface,
+                    contentColor           = StoryVenueColors.OnSurface,
+                    disabledContainerColor = StoryVenueColors.Divider,
+                    disabledContentColor   = StoryVenueColors.SubText
+                ),
+                border = null,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+            ) {
+                Text(
+                    text       = "취소",
+                    fontSize   = 18.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
 
-        // 책에 추가
-        Button(
-            onClick  = onAddToBook,
-            enabled  = !isLoading,
-            shape    = RoundedCornerShape(50.dp),
-            colors   = ButtonDefaults.buttonColors(
-                containerColor         = StoryVenueColors.Primary,
-                contentColor           = Color.White,
-                disabledContainerColor = StoryVenueColors.Divider,
-                disabledContentColor   = StoryVenueColors.SubText
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
-        ) {
-            Text(
-                text       = "책에 추가",
-                fontSize   = 18.sp,
-                fontWeight = FontWeight.SemiBold
-            )
+            Button(
+                onClick  = onSave,
+                enabled  = !isLoading,
+                shape    = RoundedCornerShape(50.dp),
+                colors   = ButtonDefaults.buttonColors(
+                    containerColor         = StoryVenueColors.Primary,
+                    contentColor           = Color.White,
+                    disabledContainerColor = StoryVenueColors.Divider,
+                    disabledContentColor   = StoryVenueColors.SubText
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+            ) {
+                Text(
+                    text       = if (isLoading) "저장 중..." else "저장하기",
+                    fontSize   = 18.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        } else {
+            OutlinedButton(
+                onClick  = onEdit,
+                enabled  = !isLoading,
+                shape    = RoundedCornerShape(50.dp),
+                colors   = ButtonDefaults.outlinedButtonColors(
+                    containerColor         = StoryVenueColors.Surface,
+                    contentColor           = StoryVenueColors.OnSurface,
+                    disabledContainerColor = StoryVenueColors.Divider,
+                    disabledContentColor   = StoryVenueColors.SubText
+                ),
+                border = null,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+            ) {
+                Text(
+                    text       = "초안 수정",
+                    fontSize   = 18.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            // 다시 생성
+            OutlinedButton(
+                onClick  = onRegenerate,
+                enabled  = !isLoading,
+                shape    = RoundedCornerShape(50.dp),
+                colors   = ButtonDefaults.outlinedButtonColors(
+                    containerColor         = StoryVenueColors.Surface,
+                    contentColor           = StoryVenueColors.OnSurface,
+                    disabledContainerColor = StoryVenueColors.Divider,
+                    disabledContentColor   = StoryVenueColors.SubText
+                ),
+                border = null,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+            ) {
+                Text(
+                    text       = "다시 생성",
+                    fontSize   = 18.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            // 책에 추가
+            Button(
+                onClick  = onAddToBook,
+                enabled  = !isLoading,
+                shape    = RoundedCornerShape(50.dp),
+                colors   = ButtonDefaults.buttonColors(
+                    containerColor         = StoryVenueColors.Primary,
+                    contentColor           = Color.White,
+                    disabledContainerColor = StoryVenueColors.Divider,
+                    disabledContentColor   = StoryVenueColors.SubText
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+            ) {
+                Text(
+                    text       = "책에 추가",
+                    fontSize   = 18.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
     }
 }

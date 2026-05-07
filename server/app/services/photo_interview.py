@@ -11,18 +11,20 @@ PHOTO_INTERVIEW_MODEL = "gpt-4o-mini"
 PHOTO_OPENING_SYSTEM_PROMPT = dedent(
     """
     당신은 자서전 프로젝트의 따뜻한 인터뷰어입니다.
-    사진을 보고 한국어로 자연스럽게 장면을 설명한 뒤, 사용자의 기억을 끌어내는 열린 질문을 하나만 하세요.
-    과도한 추측은 피하고, 사진에서 드러나는 요소와 사용자가 떠올릴 감정에 집중하세요.
-    응답은 짧은 설명 1~2문장과 질문 1문장으로 구성하고, 목록이나 번호는 쓰지 마세요.
+    사진은 사용자의 기억을 돕는 자료일 뿐, 사진 자체를 길게 설명하는 것이 목적이 아닙니다.
+    현재 질문과 연결해 사용자가 떠오르는 사람, 장면, 감정을 말하기 쉽게 짧게 이끌어 주세요.
+    사진 속 내용을 단정하지 말고, 과도한 추측은 피하세요.
+    응답은 한국어 1~2문장으로 작성하고 마지막은 열린 질문으로 끝내세요.
     """
 ).strip()
 
 PHOTO_FOLLOW_UP_SYSTEM_PROMPT = dedent(
     """
     당신은 자서전 프로젝트의 따뜻한 인터뷰어입니다.
-    대화 흐름을 바탕으로 공감 어린 반응 뒤에 열린 후속 질문 하나를 한국어로 작성하세요.
-    이미 물은 질문을 반복하지 말고, 인물, 장소, 시기, 감정, 사건 중 아직 덜 드러난 축을 파고드세요.
-    응답은 짧은 공감 1~2문장과 질문 1문장으로만 구성하고, 목록이나 번호는 쓰지 마세요.
+    현재 질문에 대한 사용자의 답을 더 잘 끌어내는 후속 질문을 한국어로 작성하세요.
+    이미 물은 질문을 반복하지 말고, 인물, 장소, 시기, 감정, 사건 중 덜 드러난 축을 부드럽게 물으세요.
+    사진을 사실로 단정하지 말고, 사용자가 스스로 기억을 풀어내도록 도와주세요.
+    응답은 짧은 공감 1문장과 질문 1문장 정도로 구성하고 목록이나 번호는 쓰지 마세요.
     """
 ).strip()
 
@@ -61,7 +63,15 @@ def _format_conversation_history(conversation_history: list[dict[str, str]]) -> 
     return "\n".join(lines)
 
 
-def generate_photo_opening_message(image_bytes: bytes, mime_type: str) -> str:
+def generate_photo_opening_message(
+    image_bytes: bytes,
+    mime_type: str,
+    *,
+    current_question: str | None = None,
+    question_hint: str | None = None,
+) -> str:
+    question_context = current_question or "이 사진과 관련해 떠오르는 기억이 있나요?"
+    hint_line = f"\n질문 힌트: {question_hint}" if question_hint else ""
     response = _get_openai_client().responses.create(
         model=PHOTO_INTERVIEW_MODEL,
         instructions=PHOTO_OPENING_SYSTEM_PROMPT,
@@ -75,12 +85,17 @@ def generate_photo_opening_message(image_bytes: bytes, mime_type: str) -> str:
                     },
                     {
                         "type": "input_text",
-                        "text": "이 사진의 장면을 설명하고, 이 기억을 풀어낼 수 있는 질문을 하나 해주세요.",
+                        "text": (
+                            "현재 질문에 답하기 쉽도록 이 사진을 활용해 짧게 이끌어 주세요.\n"
+                            f"현재 질문: {question_context}"
+                            f"{hint_line}\n"
+                            "사진 설명을 길게 하지 말고, 기억을 열 수 있는 질문 중심으로 답해주세요."
+                        ),
                     },
                 ],
             }
         ],
-        temperature=0.75,
+        temperature=0.55,
     )
     message = str(getattr(response, "output_text", "")).strip()
     if not message:
@@ -90,21 +105,30 @@ def generate_photo_opening_message(image_bytes: bytes, mime_type: str) -> str:
 
 def generate_photo_follow_up_message(
     conversation_history: list[dict[str, str]],
+    *,
+    current_question: str | None = None,
+    question_hint: str | None = None,
 ) -> str:
     transcript = _format_conversation_history(conversation_history)
+    question_context = current_question or "이 사진과 관련해 떠오르는 기억을 더 들려주세요."
+    hint_line = f"\n질문 힌트: {question_hint}" if question_hint else ""
     response = _get_openai_client().responses.create(
         model=PHOTO_INTERVIEW_MODEL,
         instructions=PHOTO_FOLLOW_UP_SYSTEM_PROMPT,
         input=dedent(
             f"""
-            아래는 사진 기반 인터뷰 대화입니다.
-            최근 흐름을 이어서 사용자의 기억을 더 깊게 끌어낼 후속 질문을 작성하세요.
+            아래는 사진을 참고하며 진행한 인터뷰 대화입니다.
+            현재 질문에 더 잘 답할 수 있도록 최근 흐름을 이어가는 후속 질문을 작성하세요.
+
+            현재 질문:
+            {question_context}
+            {hint_line}
 
             대화:
             {transcript}
             """
         ).strip(),
-        temperature=0.8,
+        temperature=0.65,
     )
     message = str(getattr(response, "output_text", "")).strip()
     if not message:

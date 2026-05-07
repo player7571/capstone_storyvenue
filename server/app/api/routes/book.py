@@ -1,4 +1,4 @@
-from uuid import UUID
+from uuid import UUID, uuid5
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -11,17 +11,63 @@ from app.api.schemas.book import (
     BookCompileRequest,
     BookDetailResponse,
     BookSummaryResponse,
+    BookUpdateRequest,
 )
 from app.db.supabase import get_supabase
-from app.services import generate_autobiography_chapters, generate_book_subtitle
+from app.services import generate_autobiography_book, generate_book_subtitle
 from app.services.safety import check_content_safety
 
 router = APIRouter(prefix="/book", tags=["book"])
 
+BOOK_BODY_OVERRIDE_TITLE = "__edited_body__"
+BOOK_BODY_OVERRIDE_SOURCE_QUESTION_NO = 0
+BOOK_BODY_OVERRIDE_NAMESPACE = UUID("1b3a4b4e-9a33-4bcb-87fe-4ac10f1f9cbe")
+
+
+def _is_body_override_chapter(chapter: dict) -> bool:
+    return (
+        str(chapter.get("title") or "").strip() == BOOK_BODY_OVERRIDE_TITLE
+        and int(chapter.get("source_question_no") or 0) == BOOK_BODY_OVERRIDE_SOURCE_QUESTION_NO
+    )
+
+
+def _visible_book_chapters(chapters: list[dict]) -> list[dict]:
+    return [dict(chapter) for chapter in chapters if not _is_body_override_chapter(chapter)]
+
+
+def _build_book_body(chapters: list[dict]) -> str:
+    for chapter in chapters:
+        if _is_body_override_chapter(chapter):
+            content = str(chapter.get("content") or "").strip()
+            if content:
+                return content
+
+    return "\n\n".join(
+        str(chapter.get("content") or "").strip()
+        for chapter in sorted(
+            _visible_book_chapters(chapters),
+            key=lambda chapter: int(chapter.get("source_question_no") or 2**31 - 1),
+        )
+        if str(chapter.get("content") or "").strip()
+    ).strip()
+
+
+def _upsert_book_body_override(chapters: list[dict], body: str) -> list[dict]:
+    visible_chapters = _visible_book_chapters(chapters)
+    override_chapter = {
+        "id": str(uuid5(BOOK_BODY_OVERRIDE_NAMESPACE, "book-body-override")),
+        "title": BOOK_BODY_OVERRIDE_TITLE,
+        "content": body.strip(),
+        "source_question_no": BOOK_BODY_OVERRIDE_SOURCE_QUESTION_NO,
+    }
+    return [override_chapter, *visible_chapters]
+
 
 def _normalize_book_row(row: dict) -> dict:
     normalized = dict(row)
-    normalized["chapters"] = normalized.get("chapters") or []
+    raw_chapters = normalized.get("chapters") or []
+    normalized["body"] = _build_book_body(raw_chapters)
+    normalized["chapters"] = _visible_book_chapters(raw_chapters)
     return normalized
 
 
@@ -146,15 +192,13 @@ def _validate_autobiography_chapters(
 
 def _build_feed_preview(subtitle: str | None, chapters: list[dict], limit: int = 220) -> str:
     subtitle_line = (subtitle or "").strip()
-    first_chapter = chapters[0] if chapters else None
-    first_title = str(first_chapter.get("title", "")).strip() if first_chapter else ""
-    first_content = str(first_chapter.get("content", "")).strip() if first_chapter else ""
+    body = _build_book_body(chapters)
 
     seed = "\n\n".join(
         part
         for part in (
             subtitle_line,
-            f"{first_title}\n{first_content}".strip() if first_title or first_content else "",
+            body,
         )
         if part
     ).strip()
@@ -200,11 +244,12 @@ def _generate_and_store_autobiography(body: AutobiographyCreateRequest, user_id:
     )
 
     try:
-        polished_chapters = generate_autobiography_chapters(
+        generated_book = generate_autobiography_book(
             book_title=body.title,
             chapters=ordered_source_chapters,
         )
-        subtitle = generate_book_subtitle(
+        polished_chapters = generated_book["chapters"]
+        subtitle = str(generated_book.get("subtitle") or "").strip() or generate_book_subtitle(
             book_title=body.title,
             chapter_titles=[chapter["title"] for chapter in polished_chapters],
         )
@@ -434,3 +479,66 @@ async def get_book(
         shared=shared_post is not None,
         shared_post_id=shared_post["id"] if shared_post else None,
     )
+
+
+@router.put("/{book_id}", response_model=BookDetailResponse)
+async def update_book(
+    book_id: UUID,
+    body: BookUpdateRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    book = _get_book_or_404(book_id, user_id)
+    if _get_shared_post_for_book(book_id, user_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="이미 공유된 자서전은 수정할 수 없어요.",
+        )
+
+    normalized_title = body.title.strip()
+    normalized_subtitle = (body.subtitle or "").strip() or None
+    normalized_body = body.body.strip()
+    if not normalized_title or not normalized_body:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="제목과 자서전 본문을 모두 입력해주세요.",
+        )
+
+    safety = check_content_safety(
+        "\n".join(part for part in (normalized_title, normalized_subtitle or "", normalized_body) if part)
+    )
+    if not safety["safe"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"부적절한 콘텐츠가 감지되었습니다: {safety['reason']}",
+        )
+
+    updated_chapters = _upsert_book_body_override(book.get("chapters") or [], normalized_body)
+
+    try:
+        updated = (
+            get_supabase()
+            .table("book_versions")
+            .update(
+                {
+                    "title": normalized_title,
+                    "subtitle": normalized_subtitle,
+                    "chapters": updated_chapters,
+                }
+            )
+            .eq("id", str(book_id))
+            .eq("user_id", user_id)
+            .execute()
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"자서전 수정 중 오류가 발생했습니다: {exc}",
+        ) from exc
+
+    if not updated.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="자서전을 찾을 수 없습니다.",
+        )
+
+    return _build_book_detail_response(updated.data[0])

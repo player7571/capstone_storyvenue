@@ -7,11 +7,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 data class VoiceInterviewUiState(
     val sessionId: String? = null,
-    val sessionType: String = "voice",
-    val photoUrl: String? = null,
+    val activePhotoUrl: String? = null,
+    val activePhotoArtifactId: String? = null,
+    val activePhotoLinkedQuestionNo: Int? = null,
     val userText: String = "",
     val interviewPrompt: InterviewPromptData? = null,
     val assistantText: String = "마이크 버튼을 눌러 음성으로 시작하거나, 사진을 첨부해 대화를 시작하세요.",
@@ -28,6 +32,11 @@ data class VoiceInterviewUiState(
     val isRecording: Boolean = false,
     val isPlayingAudio: Boolean = false,
 )
+
+private fun buildViewModelVoiceSessionTitle(): String {
+    val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.KOREA)
+    return "음성 문답 ${formatter.format(Date())}"
+}
 
 class VoiceInterviewViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(VoiceInterviewUiState())
@@ -70,9 +79,10 @@ class VoiceInterviewViewModel : ViewModel() {
             _uiState.update {
                 it.copy(
                     sessionId = detail.id,
-                    sessionType = detail.sessionType,
-                    photoUrl = detail.photoUrl,
-                    interviewPrompt = if (detail.sessionType == "photo") null else (detail.interviewState ?: defaultVoiceInterviewPrompt()),
+                    activePhotoUrl = detail.photoUrl,
+                    activePhotoArtifactId = detail.activePhotoArtifactId,
+                    activePhotoLinkedQuestionNo = detail.activePhotoLinkedQuestionNo,
+                    interviewPrompt = detail.interviewState ?: defaultVoiceInterviewPrompt(),
                     assistantText = "문답을 불러오는 중...",
                     isPreparingSession = false,
                     errorMessage = null,
@@ -83,8 +93,8 @@ class VoiceInterviewViewModel : ViewModel() {
                 ApiService.getSessionMessages(token = token, sessionId = detail.id)
             }
             messagesResult.onSuccess { messages ->
-                val fallbackText = if (detail.sessionType == "photo") {
-                    "사진 문답을 이어갈 수 있어요. 마이크 버튼을 눌러 답변을 녹음하세요."
+                val fallbackText = if (detail.photoUrl != null) {
+                    "첨부된 사진을 보며 현재 질문과 관련된 기억을 떠올려보세요."
                 } else if (detail.interviewState?.isInterviewComplete == true) {
                     "질문이 모두 끝났어요. 이제 이야기를 생성해보세요."
                 } else {
@@ -99,8 +109,8 @@ class VoiceInterviewViewModel : ViewModel() {
             }.onFailure {
                 _uiState.update { current ->
                     current.copy(
-                        assistantText = if (detail.sessionType == "photo") {
-                            "사진 문답을 이어갈 수 있어요. 마이크 버튼을 눌러 답변을 녹음하세요."
+                        assistantText = if (detail.photoUrl != null) {
+                            "첨부된 사진을 보며 현재 질문과 관련된 기억을 떠올려보세요."
                         } else if (detail.interviewState?.isInterviewComplete == true) {
                             "질문이 모두 끝났어요. 이제 이야기를 생성해보세요."
                         } else {
@@ -135,7 +145,6 @@ class VoiceInterviewViewModel : ViewModel() {
             _uiState.update {
                 it.copy(
                     sessionId = created.id,
-                    sessionType = "voice",
                     interviewPrompt = created.interviewState ?: defaultVoiceInterviewPrompt(),
                     assistantText = "질문을 보고 천천히 이야기해주세요.",
                     errorMessage = null,
@@ -188,7 +197,10 @@ class VoiceInterviewViewModel : ViewModel() {
             )
         }
         _uiState.update { it.copy(isUploadingAudio = false) }
-        result.onSuccess { applyVoiceTurnResult(it) }
+        result.onSuccess {
+            applyVoiceTurnResult(it)
+            refreshSessionPhotoContext(token, sessionId)
+        }
             .onFailure { e ->
                 _uiState.update { it.copy(errorMessage = e.message ?: "음성 문답 처리에 실패했습니다.") }
             }
@@ -200,7 +212,10 @@ class VoiceInterviewViewModel : ViewModel() {
             ApiService.voiceTextTurn(token = token, sessionId = sessionId, userText = userText)
         }
         _uiState.update { it.copy(isSubmittingText = false) }
-        result.onSuccess { applyVoiceTurnResult(it) }
+        result.onSuccess {
+            applyVoiceTurnResult(it)
+            refreshSessionPhotoContext(token, sessionId)
+        }
             .onFailure { e ->
                 _uiState.update { it.copy(errorMessage = e.message ?: "문답 처리에 실패했습니다.") }
             }
@@ -221,6 +236,7 @@ class VoiceInterviewViewModel : ViewModel() {
                     assistantText = "이전 질문으로 돌아왔어요. 천천히 다시 이야기해주세요.",
                 )
             }
+            refreshSessionPhotoContext(token, sessionId)
         }.onFailure { e ->
             _uiState.update { it.copy(errorMessage = e.message ?: "이전 질문으로 이동하지 못했습니다.") }
         }
@@ -245,6 +261,7 @@ class VoiceInterviewViewModel : ViewModel() {
                     },
                 )
             }
+            refreshSessionPhotoContext(token, sessionId)
         }.onFailure { e ->
             _uiState.update { it.copy(errorMessage = e.message ?: "다음 질문으로 이동하지 못했습니다.") }
         }
@@ -257,24 +274,38 @@ class VoiceInterviewViewModel : ViewModel() {
         fileName: String,
     ) {
         _uiState.update { it.copy(isUploadingPhoto = true, errorMessage = null) }
+        val ensuredSessionId = _uiState.value.sessionId ?: ensureVoiceSession(
+            token = token,
+            title = buildViewModelVoiceSessionTitle(),
+        ).getOrNull()
+        if (ensuredSessionId.isNullOrBlank()) {
+            _uiState.update {
+                it.copy(
+                    isUploadingPhoto = false,
+                    errorMessage = it.errorMessage ?: "사진을 첨부할 문답을 시작하지 못했습니다.",
+                )
+            }
+            return
+        }
         val result = withContext(Dispatchers.IO) {
-            ApiService.createPhotoSession(
+            ApiService.attachPhotoToSession(
                 token = token,
+                sessionId = ensuredSessionId,
                 imageBytes = imageBytes,
                 contentType = contentType,
                 fileName = fileName,
             )
         }
         _uiState.update { it.copy(isUploadingPhoto = false) }
-        result.onSuccess { started ->
+        result.onSuccess { attached ->
             _uiState.update {
                 it.copy(
-                    sessionId = started.sessionId,
-                    sessionType = "photo",
-                    interviewPrompt = null,
-                    photoUrl = started.photoUrl.takeIf { value -> value.isNotBlank() },
-                    assistantText = started.aiMessage.ifBlank {
-                        "사진을 분석했어요. 마이크 버튼을 눌러 답변을 녹음해주세요."
+                    sessionId = ensuredSessionId,
+                    activePhotoUrl = attached.photoUrl.takeIf { value -> value.isNotBlank() },
+                    activePhotoArtifactId = attached.artifactId.ifBlank { null },
+                    activePhotoLinkedQuestionNo = attached.linkedQuestionNo,
+                    assistantText = attached.aiMessage.orEmpty().ifBlank {
+                        "사진을 보며 현재 질문과 관련된 기억을 천천히 이야기해주세요."
                     },
                 )
             }
@@ -303,6 +334,22 @@ class VoiceInterviewViewModel : ViewModel() {
                 latestAudioUrl = voice.audioUrl,
                 interviewPrompt = voice.interviewState ?: it.interviewPrompt,
             )
+        }
+    }
+
+    private suspend fun refreshSessionPhotoContext(token: String, sessionId: String) {
+        val detailResult = withContext(Dispatchers.IO) {
+            ApiService.getSessionDetail(token = token, sessionId = sessionId)
+        }
+        detailResult.onSuccess { detail ->
+            _uiState.update {
+                it.copy(
+                    activePhotoUrl = detail.photoUrl,
+                    activePhotoArtifactId = detail.activePhotoArtifactId,
+                    activePhotoLinkedQuestionNo = detail.activePhotoLinkedQuestionNo,
+                    interviewPrompt = detail.interviewState ?: it.interviewPrompt,
+                )
+            }
         }
     }
 }

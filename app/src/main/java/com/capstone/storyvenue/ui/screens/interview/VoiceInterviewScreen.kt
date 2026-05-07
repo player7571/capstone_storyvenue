@@ -123,8 +123,8 @@ fun VoiceInterviewScreen(
     val uiState by viewModel.uiState.collectAsState()
 
     val sessionId = uiState.sessionId
-    val sessionType = uiState.sessionType
-    val photoUrl = uiState.photoUrl
+    val activePhotoUrl = uiState.activePhotoUrl
+    val activePhotoLinkedQuestionNo = uiState.activePhotoLinkedQuestionNo
     var photoBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     val userText = uiState.userText
     val interviewPrompt = uiState.interviewPrompt
@@ -253,10 +253,6 @@ fun VoiceInterviewScreen(
             scope.launch { snackbarHostState.showSnackbar("로그인이 필요합니다.") }
             return
         }
-        if (sessionType == "photo") {
-            scope.launch { snackbarHostState.showSnackbar("사진 문답에서는 이 기능을 사용할 수 없습니다.") }
-            return
-        }
         if (currentSessionId.isNullOrBlank()) {
             scope.launch { snackbarHostState.showSnackbar("문답이 아직 시작되지 않았습니다.") }
             return
@@ -280,10 +276,6 @@ fun VoiceInterviewScreen(
             scope.launch { snackbarHostState.showSnackbar("로그인이 필요합니다.") }
             return
         }
-        if (sessionType == "photo") {
-            scope.launch { snackbarHostState.showSnackbar("사진 문답에서는 이 기능을 사용할 수 없습니다.") }
-            return
-        }
         if (currentSessionId.isNullOrBlank()) {
             scope.launch { snackbarHostState.showSnackbar("문답이 아직 시작되지 않았습니다.") }
             return
@@ -303,10 +295,6 @@ fun VoiceInterviewScreen(
             scope.launch { snackbarHostState.showSnackbar("로그인이 필요합니다.") }
             return
         }
-        if (sessionType == "photo") {
-            scope.launch { snackbarHostState.showSnackbar("사진 문답에서는 이 기능을 사용할 수 없습니다.") }
-            return
-        }
         if (currentSessionId.isNullOrBlank()) {
             scope.launch { snackbarHostState.showSnackbar("문답이 아직 시작되지 않았습니다.") }
             return
@@ -323,10 +311,6 @@ fun VoiceInterviewScreen(
     fun attachPhoto(uri: Uri) {
         if (token.isBlank()) {
             scope.launch { snackbarHostState.showSnackbar("로그인이 필요합니다.") }
-            return
-        }
-        if (!sessionId.isNullOrBlank()) {
-            scope.launch { snackbarHostState.showSnackbar("이미 문답이 시작되어 사진을 첨부할 수 없습니다.") }
             return
         }
         if (isPreparingSession || isUploadingPhoto) return
@@ -394,12 +378,12 @@ fun VoiceInterviewScreen(
         }
     }
 
-    LaunchedEffect(uiState.photoUrl) {
+    LaunchedEffect(uiState.activePhotoUrl) {
         photoBitmap = null
-        uiState.photoUrl?.let { loadPhotoThumbnail(it) }
+        uiState.activePhotoUrl?.let { loadPhotoThumbnail(it) }
     }
 
-    val currentPrompt = if (sessionType == "photo") null else (interviewPrompt ?: defaultVoiceInterviewPrompt())
+    val currentPrompt = interviewPrompt ?: defaultVoiceInterviewPrompt()
     val totalQuestions = currentPrompt?.totalQuestions ?: 10
     val currentProgress = currentPrompt?.currentQuestionNo?.coerceIn(1, totalQuestions) ?: 1
     val currentQuestion = currentPrompt?.mainQuestion ?: "인터뷰를 진행해주세요."
@@ -427,11 +411,11 @@ fun VoiceInterviewScreen(
     )
 
     val sessionStarted = !sessionId.isNullOrBlank()
-    val canAttachPhoto = !sessionStarted && !isPreparingSession && !isUploadingPhoto && !isRecording && !isUploadingAudio && !isSubmittingText
-    val canRecordMore = sessionType == "photo" || !isInterviewComplete
+    val canAttachPhoto = !isPreparingSession && !isUploadingPhoto && !isRecording && !isUploadingAudio && !isSubmittingText && !isNavigatingPrevious && !isNavigatingNext && !isInterviewComplete
+    val canRecordMore = !isInterviewComplete
     val canGoNext = sessionStarted &&
-        sessionType != "photo" &&
         !isInterviewComplete &&
+        currentProgress < totalQuestions &&
         !isPreparingSession &&
         !isUploadingPhoto &&
         !isUploadingAudio &&
@@ -440,7 +424,6 @@ fun VoiceInterviewScreen(
         !isNavigatingNext &&
         !isRecording
     val canGoPrevious = sessionStarted &&
-        sessionType != "photo" &&
         (currentProgress > 1 || isInterviewComplete) &&
         !isPreparingSession &&
         !isUploadingPhoto &&
@@ -457,15 +440,11 @@ fun VoiceInterviewScreen(
         !isNavigatingPrevious &&
         !isNavigatingNext &&
         !isRecording &&
-        (
-            if (sessionType == "photo") {
-                true
-            } else {
-                currentQuestionStoryReady && currentQuestionHasAnswer && currentQuestionAnswerCount > 0 && currentQuestionNo != null
-            }
-        )
+        currentQuestionStoryReady &&
+        currentQuestionHasAnswer &&
+        currentQuestionAnswerCount > 0 &&
+        currentQuestionNo != null
     val canOpenAutobiography = sessionStarted &&
-        sessionType != "photo" &&
         !isPreparingSession &&
         !isUploadingPhoto &&
         !isUploadingAudio &&
@@ -521,7 +500,7 @@ fun VoiceInterviewScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = if (sessionType == "photo") "사진 문답 중" else "문답 중",
+                        text = "문답 중",
                         fontWeight = FontWeight.Bold,
                         color = StoryVenueColors.OnSurface,
                         fontFamily = SBAggroFamily,
@@ -558,7 +537,7 @@ fun VoiceInterviewScreen(
         ) {
             Spacer(Modifier.height(16.dp))
 
-            if (photoUrl != null) {
+            if (activePhotoUrl != null) {
                 Box(
                     modifier = Modifier
                         .size(width = 160.dp, height = 120.dp)
@@ -582,6 +561,19 @@ fun VoiceInterviewScreen(
                     }
                 }
                 Spacer(Modifier.height(16.dp))
+                Text(
+                    text = if (activePhotoLinkedQuestionNo != null && activePhotoLinkedQuestionNo == currentQuestionNo) {
+                        "이 사진을 보며 현재 질문과 연결된 기억을 떠올려보세요."
+                    } else {
+                        "첨부한 사진은 현재 질문의 기억을 떠올리는 데 도움을 줍니다."
+                    },
+                    fontSize = 15.sp,
+                    color = StoryVenueColors.SubText,
+                    fontFamily = SBAggroFamily,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(12.dp))
             }
 
             if (currentPrompt != null) {
@@ -744,7 +736,7 @@ fun VoiceInterviewScreen(
                     },
                 ) {
                     Text(
-                        text = "📷  사진으로 시작하기",
+                        text = if (sessionStarted) "📷  사진 추가하기" else "📷  사진으로 기억 돕기",
                         fontFamily = SBAggroFamily,
                         fontWeight = FontWeight.Bold,
                         color = StoryVenueColors.Primary,
@@ -854,10 +846,6 @@ fun VoiceInterviewScreen(
                             snackbarHostState.showSnackbar("세션이 준비되지 않았습니다. 잠시 후 다시 시도해주세요.")
                         }
                     } else {
-                        if (sessionType == "photo") {
-                            onGenerateChapter(currentSessionId, null, "reflection", false)
-                            return@StoryButton
-                        }
                         if (!canGenerateCurrentStory || currentQuestionNo == null) {
                             scope.launch {
                                 snackbarHostState.showSnackbar("현재 질문에 답변해야 이 질문의 이야기를 만들 수 있어요.")
@@ -873,7 +861,7 @@ fun VoiceInterviewScreen(
                 },
                 isLoading = false,
                 enabled = canGenerateCurrentStory,
-                text = if (sessionType != "photo" && currentQuestionNo != null) {
+                text = if (currentQuestionNo != null) {
                     "이야기 ${currentQuestionNo} 생성하기"
                 } else {
                     "이야기 생성하기"

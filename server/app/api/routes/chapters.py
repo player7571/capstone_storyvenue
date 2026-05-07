@@ -141,17 +141,11 @@ def _load_voice_question_story_context(
             detail="이 질문에는 아직 사용자 답변이 없습니다.",
         )
 
-    question = get_interview_question(question_no)
     current_answer_text = "\n".join(current_answers).strip()
     history: list[dict[str, str]] = [
         {
             "role": "user",
-            "content": (
-                "[현재 질문 답변]\n"
-                f"질문: {question.main_question}\n"
-                f"힌트: {question.hint}\n"
-                f"답변: {current_answer_text}"
-            ),
+            "content": current_answer_text,
         },
     ]
 
@@ -187,55 +181,37 @@ async def generate_chapter(
     body: ChapterGenerateRequest,
     user_id: str = Depends(get_current_user_id),
 ):
-    session = _get_session_or_404(body.session_id, user_id)
-    session_type = str(session.get("session_type") or "voice").strip().lower()
-
-    if session_type == "photo":
-        conversation_history = _load_legacy_conversation_history(body.session_id)
-        if not conversation_history:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="세션에 사용자 답변 기록이 없습니다.",
-            )
-        chapter_type = body.chapter_type or "reflection"
-        source_question_no = None
-        answer_snapshot = "\n".join(
-            str(message.get("content", "")).strip()
-            for message in conversation_history
-            if str(message.get("content", "")).strip()
-        ).strip()
-        story_quality = "ready"
-    else:
-        if body.question_no is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="질문 번호가 필요합니다.",
-            )
-        question = get_interview_question(body.question_no)
-        chapter_type = question.chapter_type
-        conversation_history, answer_snapshot, computed_story_quality = _load_voice_question_story_context(
-            body.session_id,
-            body.question_no,
+    _get_session_or_404(body.session_id, user_id)
+    if body.question_no is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="질문 번호가 필요합니다.",
         )
-        try:
-            question_state = load_question_state_from_store(body.session_id, body.question_no) or {}
-        except Exception:
-            question_state = {}
-        story_quality = (
-            str(question_state.get("story_quality") or "").strip().lower()
-            or computed_story_quality
+    question = get_interview_question(body.question_no)
+    chapter_type = question.chapter_type
+    conversation_history, answer_snapshot, computed_story_quality = _load_voice_question_story_context(
+        body.session_id,
+        body.question_no,
+    )
+    try:
+        question_state = load_question_state_from_store(body.session_id, body.question_no) or {}
+    except Exception:
+        question_state = {}
+    story_quality = (
+        str(question_state.get("story_quality") or "").strip().lower()
+        or computed_story_quality
+    )
+    if story_quality == "none":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="이 질문에 답변이 있어야 이야기를 만들 수 있어요.",
         )
-        if story_quality == "none":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="이 질문에 답변이 있어야 이야기를 만들 수 있어요.",
-            )
-        if story_quality == "basic" and not body.allow_basic:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="답변이 조금 짧아요. 지금 생성할지 한 번 더 이야기할지 선택해주세요.",
-            )
-        source_question_no = body.question_no
+    if story_quality == "basic" and not body.allow_basic:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="답변이 조금 짧아요. 지금 생성할지 한 번 더 이야기할지 선택해주세요.",
+        )
+    source_question_no = body.question_no
 
     try:
         generated = generate_chapter_content(

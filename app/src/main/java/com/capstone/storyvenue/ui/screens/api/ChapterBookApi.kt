@@ -30,6 +30,7 @@ object ChapterBookApi {
             subtitle = json.optCleanString("subtitle").ifBlank { null },
             createdAt = json.optCleanString("created_at").ifBlank { null },
             chapters = chapters,
+            body = json.optString("body", ""),
             shared = json.optBoolean("shared", false),
             sharedPostId = json.optCleanString("shared_post_id").ifBlank { null },
         )
@@ -132,6 +133,31 @@ object ChapterBookApi {
         }
     }
 
+    fun getChapter(
+        token: String,
+        chapterId: String,
+    ): Result<GeneratedChapterData> {
+        return try {
+            val response = apiClient.newCall(
+                authGet("$API_BASE_URL/chapters/$chapterId", token)
+            ).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                val json = JSONObject(body)
+                Result.success(
+                    parseGeneratedChapter(
+                        json = json,
+                        sessionId = json.optString("session_id", ""),
+                    )
+                )
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "초안 조회 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     fun listChapters(
         token: String,
         sessionId: String? = null,
@@ -190,6 +216,38 @@ object ChapterBookApi {
                 Result.success(Unit)
             } else {
                 Result.failure(Exception(parseErrorMessage(body, "챕터 삭제 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun updateChapter(
+        token: String,
+        chapterId: String,
+        title: String,
+        content: String,
+    ): Result<GeneratedChapterData> {
+        return try {
+            val payload = JSONObject().apply {
+                put("title", title)
+                put("content", content)
+            }.toString()
+
+            val response = apiClient.newCall(
+                authPut("$API_BASE_URL/chapters/$chapterId", token, payload)
+            ).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                val json = JSONObject(body)
+                Result.success(
+                    parseGeneratedChapter(
+                        json = json,
+                        sessionId = json.optString("session_id", ""),
+                    )
+                )
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "초안 수정 실패")))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -258,6 +316,37 @@ object ChapterBookApi {
                 Result.success(parseBookDetail(JSONObject(body)))
             } else {
                 Result.failure(Exception(parseErrorMessage(body, "자서전 조회 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun updateBook(
+        token: String,
+        bookId: String,
+        title: String,
+        subtitle: String?,
+        body: String,
+    ): Result<BookDetailData> {
+        return try {
+            val payload = JSONObject().apply {
+                put("title", title)
+                if (subtitle.isNullOrBlank()) {
+                    put("subtitle", JSONObject.NULL)
+                } else {
+                    put("subtitle", subtitle)
+                }
+                put("body", body)
+            }.toString()
+            val response = apiClient.newCall(
+                authPut("$API_BASE_URL/book/$bookId", token, payload)
+            ).execute()
+            val responseBody = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                Result.success(parseBookDetail(JSONObject(responseBody)))
+            } else {
+                Result.failure(Exception(parseErrorMessage(responseBody, "자서전 수정 실패")))
             }
         } catch (e: Exception) {
             Result.failure(e)
