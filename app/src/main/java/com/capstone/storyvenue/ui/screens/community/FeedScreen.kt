@@ -25,7 +25,9 @@ import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -59,6 +61,7 @@ import androidx.compose.ui.unit.sp
 import com.capstone.storyvenue.ui.theme.SBAggroFamily
 import com.capstone.storyvenue.ui.theme.StoryVenueColors
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -104,13 +107,14 @@ fun FeedScreen(
     var posts by remember { mutableStateOf<List<FeedPost>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var isRefreshing by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
     var hasNotifBadge by remember { mutableStateOf(false) }
     var hasChatBadge by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    suspend fun loadFeed() {
+    suspend fun loadFeed(query: String = searchQuery) {
         withContext(Dispatchers.IO) {
-            ApiService.getFeed(token).onSuccess { posts = it }
+            ApiService.getFeed(token, query = query.trim()).onSuccess { posts = it }
         }
     }
 
@@ -140,6 +144,13 @@ fun FeedScreen(
         loadFeed()
         loadBadges()
         isLoading = false
+    }
+
+    LaunchedEffect(searchQuery) {
+        if (!isLoading) {
+            delay(350)
+            loadFeed(searchQuery)
+        }
     }
 
     Scaffold(
@@ -200,7 +211,7 @@ fun FeedScreen(
                     scope.launch {
                         isRefreshing = true
                         loadProfile()
-                        loadFeed()
+                        loadFeed(searchQuery)
                         isRefreshing = false
                     }
                 },
@@ -211,6 +222,15 @@ fun FeedScreen(
                         .fillMaxSize()
                         .padding(horizontal = 16.dp),
                 ) {
+                    item {
+                        Spacer(Modifier.height(8.dp))
+                        FeedSearchBar(
+                            query = searchQuery,
+                            onQueryChange = { searchQuery = it },
+                            onClear = { searchQuery = "" },
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
                     if (posts.isEmpty()) {
                         item {
                             Box(
@@ -219,13 +239,12 @@ fun FeedScreen(
                             ) {
                                 EmptyState(
                                     icon = Icons.AutoMirrored.Filled.MenuBook,
-                                    title = "아직 올라온 이야기가 없어요",
-                                    subtitle = "첫 이야기를 올려 사람들과 나눠보세요.",
+                                    title = if (searchQuery.isBlank()) "아직 올라온 이야기가 없어요" else "검색 결과가 없어요",
+                                    subtitle = if (searchQuery.isBlank()) "첫 이야기를 올려 사람들과 나눠보세요." else "다른 검색어로 다시 찾아보세요.",
                                 )
                             }
                         }
                     } else {
-                        item { Spacer(Modifier.height(8.dp)) }
                         items(posts) { post ->
                             FeedPostCard(post = post, token = token, onClick = { onPostClick(post) })
                             Spacer(Modifier.height(12.dp))
@@ -236,6 +255,55 @@ fun FeedScreen(
             }
         }
     }
+}
+
+
+@Composable
+private fun FeedSearchBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClear: () -> Unit,
+) {
+    TextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        placeholder = {
+            Text(
+                text = "제목, 내용, 작성자 검색",
+                color = StoryVenueColors.SubText,
+                fontFamily = SBAggroFamily,
+            )
+        },
+        leadingIcon = {
+            Icon(
+                imageVector = Icons.Filled.Search,
+                contentDescription = "검색",
+                tint = StoryVenueColors.SubText,
+            )
+        },
+        trailingIcon = {
+            if (query.isNotBlank()) {
+                IconButton(onClick = onClear) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "검색어 지우기",
+                        tint = StoryVenueColors.SubText,
+                    )
+                }
+            }
+        },
+        shape = RoundedCornerShape(16.dp),
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = StoryVenueColors.Surface,
+            unfocusedContainerColor = StoryVenueColors.Surface,
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+            focusedTextColor = StoryVenueColors.OnSurface,
+            unfocusedTextColor = StoryVenueColors.OnSurface,
+        ),
+    )
 }
 
 @Composable

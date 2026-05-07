@@ -175,8 +175,8 @@ object ApiService {
     ): Result<FeedPost> = FeedApi.createChapterFeedPost(token, chapterId)
 
     // ── Feed ─────────────────────────────────────────
-    fun getFeed(token: String, limit: Int = 20, offset: Int = 0): Result<List<FeedPost>> =
-        FeedApi.getFeed(token, limit, offset)
+    fun getFeed(token: String, limit: Int = 20, offset: Int = 0, query: String = ""): Result<List<FeedPost>> =
+        FeedApi.getFeed(token, limit, offset, query)
 
     fun getMyFeed(token: String, limit: Int = 20, offset: Int = 0): Result<List<FeedPost>> =
         FeedApi.getMyFeed(token, limit, offset)
