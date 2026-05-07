@@ -1,6 +1,7 @@
 package com.capstone.storyvenue.ui.screens
 
 import android.content.Context
+import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -48,6 +49,33 @@ import com.capstone.storyvenue.ui.theme.StoryVenueColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private fun shareToKakaoTalk(context: Context, title: String, subtitle: String?, body: String) {
+    val preview = body.take(200).let { if (body.length > 200) "$it…" else it }
+    val subtitleLine = if (!subtitle.isNullOrBlank()) "\n$subtitle" else ""
+    val text = "📖 $title$subtitleLine\n\n$preview\n\n- StoryVenue에서 작성된 자서전"
+
+    val kakaoIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, text)
+        setPackage("com.kakao.talk")
+    }
+
+    if (kakaoIntent.resolveActivity(context.packageManager) != null) {
+        context.startActivity(kakaoIntent)
+    } else {
+        // 카카오톡 미설치 시 일반 공유 시트
+        context.startActivity(
+            Intent.createChooser(
+                Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, text)
+                },
+                "자서전 공유하기",
+            )
+        )
+    }
+}
 
 private fun buildAutobiographyBody(chapters: List<BookChapterPayloadData>): String {
     return chapters
@@ -437,6 +465,34 @@ fun AutobiographyDetailScreen(
                                     fontWeight = FontWeight.SemiBold,
                                 )
                             }
+                        }
+
+                        val kakaoShareBody = detailBook.body.ifBlank {
+                            buildAutobiographyBody(detailBook.chapters)
+                        }
+                        Button(
+                            onClick = {
+                                shareToKakaoTalk(
+                                    context = context,
+                                    title = detailBook.title,
+                                    subtitle = detailBook.subtitle,
+                                    body = kakaoShareBody,
+                                )
+                            },
+                            shape = RoundedCornerShape(50.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFFFE300),
+                                contentColor = Color(0xFF3C1E1E),
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                        ) {
+                            Text(
+                                text = "카카오톡으로 공유",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
                         }
                     }
                 }
