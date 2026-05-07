@@ -289,23 +289,51 @@ fun LoginScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    Box(modifier = Modifier.fillMaxSize().background(StoryVenueColors.Background).imePadding()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(StoryVenueColors.Background)
+            .imePadding()
+    ) {
+        // 상단 로고 + 설명
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                .align(Alignment.Center)
                 .padding(horizontal = 24.dp),
         ) {
-            Spacer(Modifier.height(80.dp))
+            Text(
+                text = "📖",
+                fontSize = 64.sp,
+            )
+            Spacer(Modifier.height(20.dp))
             Text(
                 text = "이야기마당",
-                fontSize = 34.sp,
+                fontSize = 36.sp,
                 fontWeight = FontWeight.Bold,
                 color = StoryVenueColors.Primary,
                 fontFamily = SBAggroFamily,
             )
-            Spacer(Modifier.height(48.dp))
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = "당신의 이야기를\n책으로 만들어요",
+                fontSize = 16.sp,
+                color = StoryVenueColors.SubText,
+                textAlign = TextAlign.Center,
+                lineHeight = 26.sp,
+                fontFamily = SBAggroFamily,
+            )
+        }
+
+        // 하단 버튼 영역
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 24.dp, vertical = 48.dp),
+        ) {
             Button(
                 onClick = {
                     isLoading = true
@@ -344,7 +372,7 @@ fun LoginScreen(
                     )
                 } else {
                     Text(
-                        text = "카카오로 로그인",
+                        text = "카카오톡으로 시작",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = SBAggroFamily,
@@ -362,7 +390,6 @@ fun LoginScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            Spacer(Modifier.height(32.dp))
         }
     }
 
@@ -491,10 +518,10 @@ private fun parseKakaoCallbackUrl(callbackUrl: String): Triple<String?, String?,
         val code = uri.getQueryParameter("code")?.trim().orEmpty().ifBlank { null }
         val state = uri.getQueryParameter("state")?.trim().orEmpty().ifBlank { null }
         val error = (
-            uri.getQueryParameter("error_description")
-                ?: uri.getQueryParameter("error")
-                ?: uri.getQueryParameter("error_reason")
-            ).orEmpty().trim().ifBlank { null }
+                uri.getQueryParameter("error_description")
+                    ?: uri.getQueryParameter("error")
+                    ?: uri.getQueryParameter("error_reason")
+                ).orEmpty().trim().ifBlank { null }
         Triple(code, state, error)
     } catch (_: Exception) {
         Triple(null, null, "카카오 인증 응답 파싱에 실패했습니다.")
