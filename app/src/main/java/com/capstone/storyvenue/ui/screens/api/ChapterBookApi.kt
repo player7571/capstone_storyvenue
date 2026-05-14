@@ -1,5 +1,8 @@
 package com.capstone.storyvenue.ui.screens
 
+import okhttp3.MultipartBody
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.InterruptedIOException
@@ -364,6 +367,57 @@ object ChapterBookApi {
             } else {
                 Result.failure(Exception(parseErrorMessage(body, "공유 자서전 조회 실패")))
             }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun exportBookPdf(
+        token: String,
+        bookId: String,
+        includeCover: Boolean,
+        coverImageBytes: ByteArray? = null,
+        coverImageContentType: String? = null,
+        coverImageFileName: String? = null,
+    ): Result<ByteArray> {
+        return try {
+            val multipartBuilder = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("include_cover", if (includeCover) "true" else "false")
+
+            if (includeCover && coverImageBytes != null && coverImageBytes.isNotEmpty()) {
+                val mediaType = ApiHttp.mediaTypeOrDefault(
+                    coverImageContentType ?: "image/jpeg"
+                )
+                multipartBuilder.addFormDataPart(
+                    "cover_image",
+                    coverImageFileName ?: "cover.jpg",
+                    coverImageBytes.toRequestBody(mediaType),
+                )
+            }
+
+            val request = Request.Builder()
+                .url("$API_BASE_URL/book/$bookId/pdf")
+                .addHeader("Authorization", "Bearer $token")
+                .post(multipartBuilder.build())
+                .build()
+
+            val response = apiChapterClient.newCall(request).execute()
+            if (response.isSuccessful) {
+                val bytes = response.body?.bytes() ?: ByteArray(0)
+                if (bytes.isEmpty()) {
+                    Result.failure(Exception("PDF 파일이 비어 있어요."))
+                } else {
+                    Result.success(bytes)
+                }
+            } else {
+                val errorBody = response.body?.string() ?: ""
+                Result.failure(Exception(parseErrorMessage(errorBody, "PDF 내보내기 실패")))
+            }
+        } catch (_: SocketTimeoutException) {
+            Result.failure(Exception("PDF 생성 시간이 길어지고 있어요. 다시 시도해주세요."))
+        } catch (_: InterruptedIOException) {
+            Result.failure(Exception("PDF 생성 시간이 길어지고 있어요. 다시 시도해주세요."))
         } catch (e: Exception) {
             Result.failure(e)
         }

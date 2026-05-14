@@ -162,6 +162,22 @@ object ApiService {
     fun shareBookToFeed(token: String, bookId: String): Result<BookShareResultData> =
         ChapterBookApi.shareBookToFeed(token, bookId)
 
+    fun exportBookPdf(
+        token: String,
+        bookId: String,
+        includeCover: Boolean,
+        coverImageBytes: ByteArray? = null,
+        coverImageContentType: String? = null,
+        coverImageFileName: String? = null,
+    ): Result<ByteArray> = ChapterBookApi.exportBookPdf(
+        token = token,
+        bookId = bookId,
+        includeCover = includeCover,
+        coverImageBytes = coverImageBytes,
+        coverImageContentType = coverImageContentType,
+        coverImageFileName = coverImageFileName,
+    )
+
     fun createFeedPost(
         token: String,
         bookId: String,
