@@ -1,19 +1,15 @@
 package com.capstone.storyvenue.ui.screens
 
 import android.content.Context
-import android.content.Intent
 import android.graphics.BitmapFactory
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,13 +31,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -52,51 +43,22 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.capstone.storyvenue.ui.screens.common.PdfExport
+import com.capstone.storyvenue.ui.screens.common.PdfExportSheetContent
+import com.capstone.storyvenue.ui.screens.common.PdfShareMode
+import com.capstone.storyvenue.ui.screens.common.shareBookTextToKakaoTalk
 import com.capstone.storyvenue.ui.theme.StoryVenueColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-private fun shareToKakaoTalk(context: Context, title: String, subtitle: String?, body: String) {
-    val preview = body.take(200).let { if (body.length > 200) "$it…" else it }
-    val subtitleLine = if (!subtitle.isNullOrBlank()) "\n$subtitle" else ""
-    val text = "📖 $title$subtitleLine\n\n$preview\n\n- StoryVenue에서 작성된 자서전"
-
-    val kakaoIntent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_TEXT, text)
-        setPackage("com.kakao.talk")
-    }
-
-    if (kakaoIntent.resolveActivity(context.packageManager) != null) {
-        context.startActivity(kakaoIntent)
-    } else {
-        // 카카오톡 미설치 시 일반 공유 시트
-        context.startActivity(
-            Intent.createChooser(
-                Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, text)
-                },
-                "자서전 공유하기",
-            )
-        )
-    }
-}
-
-private enum class PdfShareMode { SAVE, KAKAO }
 
 private fun buildAutobiographyBody(chapters: List<BookChapterPayloadData>): String {
     return chapters
@@ -610,7 +572,7 @@ fun AutobiographyDetailScreen(
                         }
                         Button(
                             onClick = {
-                                shareToKakaoTalk(
+                                shareBookTextToKakaoTalk(
                                     context = context,
                                     title = detailBook.title,
                                     subtitle = detailBook.subtitle,
@@ -698,212 +660,3 @@ fun AutobiographyDetailScreen(
     }
 }
 
-@Composable
-private fun PdfExportSheetContent(
-    includeCover: Boolean,
-    onIncludeCoverChange: (Boolean) -> Unit,
-    coverBitmap: ImageBitmap?,
-    onPickCoverImage: () -> Unit,
-    onClearCoverImage: () -> Unit,
-    shareMode: PdfShareMode,
-    onShareModeChange: (PdfShareMode) -> Unit,
-    isExporting: Boolean,
-    onConfirm: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 8.dp)
-            .padding(bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
-    ) {
-        Text(
-            text = "PDF로 내보내기",
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            color = StoryVenueColors.OnSurface,
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "표지 포함하기",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = StoryVenueColors.OnSurface,
-                )
-                Text(
-                    text = "체크하면 표지 이미지를 고를 수 있어요.",
-                    fontSize = 13.sp,
-                    color = StoryVenueColors.SubText,
-                )
-            }
-            Switch(
-                checked = includeCover,
-                onCheckedChange = { onIncludeCoverChange(it) },
-                enabled = !isExporting,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = StoryVenueColors.Primary,
-                ),
-            )
-        }
-
-        if (includeCover) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                val bitmap = coverBitmap
-                if (bitmap != null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(140.dp)
-                            .clip(RoundedCornerShape(12.dp)),
-                    ) {
-                        Image(
-                            bitmap = bitmap,
-                            contentDescription = "표지 이미지",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        OutlinedButton(
-                            onClick = onPickCoverImage,
-                            enabled = !isExporting,
-                            shape = RoundedCornerShape(50.dp),
-                            border = null,
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                containerColor = StoryVenueColors.Surface,
-                                contentColor = StoryVenueColors.OnSurface,
-                            ),
-                            modifier = Modifier.weight(1f).height(44.dp),
-                        ) {
-                            Text("이미지 변경", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                        }
-                        TextButton(
-                            onClick = onClearCoverImage,
-                            enabled = !isExporting,
-                            modifier = Modifier.height(44.dp),
-                        ) {
-                            Text(
-                                text = "제거",
-                                fontSize = 14.sp,
-                                color = StoryVenueColors.SubText,
-                            )
-                        }
-                    }
-                } else {
-                    OutlinedButton(
-                        onClick = onPickCoverImage,
-                        enabled = !isExporting,
-                        shape = RoundedCornerShape(50.dp),
-                        border = null,
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = StoryVenueColors.Surface,
-                            contentColor = StoryVenueColors.OnSurface,
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp),
-                    ) {
-                        Text("표지 이미지 선택", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                    Text(
-                        text = "이미지를 고르지 않으면 텍스트로 된 표지로 만들어요.",
-                        fontSize = 12.sp,
-                        color = StoryVenueColors.SubText,
-                    )
-                }
-            }
-        }
-
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                text = "어떻게 받을까요?",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = StoryVenueColors.OnSurface,
-            )
-            PdfShareModeRow(
-                label = "다운로드 폴더에 저장",
-                selected = shareMode == PdfShareMode.SAVE,
-                enabled = !isExporting,
-                onSelect = { onShareModeChange(PdfShareMode.SAVE) },
-            )
-            PdfShareModeRow(
-                label = "카카오톡으로 공유",
-                selected = shareMode == PdfShareMode.KAKAO,
-                enabled = !isExporting,
-                onSelect = { onShareModeChange(PdfShareMode.KAKAO) },
-            )
-        }
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Button(
-            onClick = onConfirm,
-            enabled = !isExporting,
-            shape = RoundedCornerShape(50.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = StoryVenueColors.Primary,
-                contentColor = Color.White,
-                disabledContainerColor = StoryVenueColors.Divider,
-                disabledContentColor = StoryVenueColors.SubText,
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-        ) {
-            if (isExporting) {
-                CircularProgressIndicator(
-                    color = Color.White,
-                    strokeWidth = 2.dp,
-                    modifier = Modifier.size(22.dp),
-                )
-            } else {
-                Text(
-                    text = "만들기",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun PdfShareModeRow(
-    label: String,
-    selected: Boolean,
-    enabled: Boolean,
-    onSelect: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RadioButton(
-            selected = selected,
-            onClick = onSelect,
-            enabled = enabled,
-            colors = RadioButtonDefaults.colors(
-                selectedColor = StoryVenueColors.Primary,
-            ),
-        )
-        Text(
-            text = label,
-            fontSize = 16.sp,
-            color = StoryVenueColors.OnSurface,
-            modifier = Modifier.padding(start = 4.dp),
-        )
-    }
-}
