@@ -2,11 +2,18 @@ package com.capstone.storyvenue.ui.screens
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,12 +32,19 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,11 +54,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.capstone.storyvenue.ui.screens.common.PdfExport
 import com.capstone.storyvenue.ui.theme.StoryVenueColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -77,6 +96,8 @@ private fun shareToKakaoTalk(context: Context, title: String, subtitle: String?,
     }
 }
 
+private enum class PdfShareMode { SAVE, KAKAO }
+
 private fun buildAutobiographyBody(chapters: List<BookChapterPayloadData>): String {
     return chapters
         .sortedBy { it.sourceQuestionNo ?: Int.MAX_VALUE }
@@ -106,6 +127,44 @@ fun AutobiographyDetailScreen(
     var editingTitle by remember { mutableStateOf("") }
     var editingSubtitle by remember { mutableStateOf("") }
     var editingBody by remember { mutableStateOf("") }
+
+    var isPdfSheetOpen by remember { mutableStateOf(false) }
+    var pdfIncludeCover by remember { mutableStateOf(false) }
+    var pdfCoverBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var pdfCoverMime by remember { mutableStateOf<String?>(null) }
+    var pdfCoverBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+    var pdfShareMode by remember { mutableStateOf(PdfShareMode.SAVE) }
+    var isExportingPdf by remember { mutableStateOf(false) }
+    val pdfSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    val pdfCoverPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val resolver = context.contentResolver
+                    val mime = resolver.getType(uri) ?: "image/jpeg"
+                    val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: throw Exception("이미지를 읽을 수 없습니다.")
+                    if (bytes.size > 10 * 1024 * 1024) {
+                        throw Exception("표지 이미지 크기는 10MB 이하여야 해요.")
+                    }
+                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                        ?: throw Exception("이미지를 표시할 수 없어요.")
+                    Triple(bytes, mime, bitmap)
+                }
+            }
+            result.onSuccess { (bytes, mime, bitmap) ->
+                pdfCoverBytes = bytes
+                pdfCoverMime = mime
+                pdfCoverBitmap = bitmap
+            }.onFailure { e ->
+                Toast.makeText(context, e.message ?: "이미지를 불러오지 못했어요.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     val currentBook = book
     LaunchedEffect(currentBook?.id, currentBook?.title, currentBook?.subtitle, currentBook?.body, isEditMode) {
@@ -154,6 +213,85 @@ fun AutobiographyDetailScreen(
                     Toast.LENGTH_SHORT,
                 ).show()
             }
+        }
+    }
+
+    fun resetPdfSheetState() {
+        pdfIncludeCover = false
+        pdfCoverBytes = null
+        pdfCoverMime = null
+        pdfCoverBitmap = null
+        pdfShareMode = PdfShareMode.SAVE
+    }
+
+    fun exportPdf() {
+        val target = book ?: return
+        if (isExportingPdf) return
+        if (token.isBlank()) {
+            Toast.makeText(context, "로그인이 필요합니다.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        isExportingPdf = true
+        scope.launch {
+            val includeCover = pdfIncludeCover
+            val coverBytes = if (includeCover) pdfCoverBytes else null
+            val coverMime = if (includeCover) pdfCoverMime else null
+            val shareMode = pdfShareMode
+            val fileName = PdfExport.safeFileName(target.title)
+
+            val pdfResult = withContext(Dispatchers.IO) {
+                ApiService.exportBookPdf(
+                    token = token,
+                    bookId = target.id,
+                    includeCover = includeCover,
+                    coverImageBytes = coverBytes,
+                    coverImageContentType = coverMime,
+                    coverImageFileName = coverBytes?.let {
+                        if ((coverMime ?: "").contains("png")) "cover.png" else "cover.jpg"
+                    },
+                )
+            }
+
+            pdfResult.onSuccess { bytes ->
+                val handled = withContext(Dispatchers.IO) {
+                    runCatching {
+                        when (shareMode) {
+                            PdfShareMode.SAVE -> {
+                                PdfExport.saveToDownloads(context, bytes, fileName)
+                                null
+                            }
+                            PdfShareMode.KAKAO -> PdfExport.cacheForShare(context, bytes, fileName)
+                        }
+                    }
+                }
+                handled.onSuccess { shareUri ->
+                    when (shareMode) {
+                        PdfShareMode.SAVE -> Toast.makeText(
+                            context,
+                            "다운로드 폴더에 저장했어요.",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        PdfShareMode.KAKAO -> if (shareUri != null) {
+                            PdfExport.shareToKakao(context, shareUri, target.title)
+                        }
+                    }
+                    isPdfSheetOpen = false
+                    resetPdfSheetState()
+                }.onFailure { e ->
+                    Toast.makeText(
+                        context,
+                        e.message ?: "PDF 저장에 실패했어요.",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }.onFailure { e ->
+                Toast.makeText(
+                    context,
+                    e.message ?: "PDF 내보내기에 실패했어요.",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+            isExportingPdf = false
         }
     }
 
@@ -494,9 +632,278 @@ fun AutobiographyDetailScreen(
                                 fontWeight = FontWeight.SemiBold,
                             )
                         }
+
+                        OutlinedButton(
+                            onClick = { isPdfSheetOpen = true },
+                            enabled = !isExportingPdf,
+                            shape = RoundedCornerShape(50.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = StoryVenueColors.Surface,
+                                contentColor = StoryVenueColors.OnSurface,
+                            ),
+                            border = null,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                        ) {
+                            Text(
+                                text = "PDF로 내보내기",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
                     }
                 }
             }
         }
+
+        if (isPdfSheetOpen) {
+            ModalBottomSheet(
+                onDismissRequest = {
+                    if (!isExportingPdf) {
+                        isPdfSheetOpen = false
+                    }
+                },
+                sheetState = pdfSheetState,
+                containerColor = StoryVenueColors.Background,
+            ) {
+                PdfExportSheetContent(
+                    includeCover = pdfIncludeCover,
+                    onIncludeCoverChange = { enabled ->
+                        pdfIncludeCover = enabled
+                        if (!enabled) {
+                            pdfCoverBytes = null
+                            pdfCoverMime = null
+                            pdfCoverBitmap = null
+                        }
+                    },
+                    coverBitmap = pdfCoverBitmap,
+                    onPickCoverImage = {
+                        pdfCoverPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                    onClearCoverImage = {
+                        pdfCoverBytes = null
+                        pdfCoverMime = null
+                        pdfCoverBitmap = null
+                    },
+                    shareMode = pdfShareMode,
+                    onShareModeChange = { pdfShareMode = it },
+                    isExporting = isExportingPdf,
+                    onConfirm = { exportPdf() },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PdfExportSheetContent(
+    includeCover: Boolean,
+    onIncludeCoverChange: (Boolean) -> Unit,
+    coverBitmap: ImageBitmap?,
+    onPickCoverImage: () -> Unit,
+    onClearCoverImage: () -> Unit,
+    shareMode: PdfShareMode,
+    onShareModeChange: (PdfShareMode) -> Unit,
+    isExporting: Boolean,
+    onConfirm: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 8.dp)
+            .padding(bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        Text(
+            text = "PDF로 내보내기",
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            color = StoryVenueColors.OnSurface,
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "표지 포함하기",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = StoryVenueColors.OnSurface,
+                )
+                Text(
+                    text = "체크하면 표지 이미지를 고를 수 있어요.",
+                    fontSize = 13.sp,
+                    color = StoryVenueColors.SubText,
+                )
+            }
+            Switch(
+                checked = includeCover,
+                onCheckedChange = { onIncludeCoverChange(it) },
+                enabled = !isExporting,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = StoryVenueColors.Primary,
+                ),
+            )
+        }
+
+        if (includeCover) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                val bitmap = coverBitmap
+                if (bitmap != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(140.dp)
+                            .clip(RoundedCornerShape(12.dp)),
+                    ) {
+                        Image(
+                            bitmap = bitmap,
+                            contentDescription = "표지 이미지",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OutlinedButton(
+                            onClick = onPickCoverImage,
+                            enabled = !isExporting,
+                            shape = RoundedCornerShape(50.dp),
+                            border = null,
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = StoryVenueColors.Surface,
+                                contentColor = StoryVenueColors.OnSurface,
+                            ),
+                            modifier = Modifier.weight(1f).height(44.dp),
+                        ) {
+                            Text("이미지 변경", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        }
+                        TextButton(
+                            onClick = onClearCoverImage,
+                            enabled = !isExporting,
+                            modifier = Modifier.height(44.dp),
+                        ) {
+                            Text(
+                                text = "제거",
+                                fontSize = 14.sp,
+                                color = StoryVenueColors.SubText,
+                            )
+                        }
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = onPickCoverImage,
+                        enabled = !isExporting,
+                        shape = RoundedCornerShape(50.dp),
+                        border = null,
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = StoryVenueColors.Surface,
+                            contentColor = StoryVenueColors.OnSurface,
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                    ) {
+                        Text("표지 이미지 선택", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Text(
+                        text = "이미지를 고르지 않으면 텍스트로 된 표지로 만들어요.",
+                        fontSize = 12.sp,
+                        color = StoryVenueColors.SubText,
+                    )
+                }
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = "어떻게 받을까요?",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = StoryVenueColors.OnSurface,
+            )
+            PdfShareModeRow(
+                label = "다운로드 폴더에 저장",
+                selected = shareMode == PdfShareMode.SAVE,
+                enabled = !isExporting,
+                onSelect = { onShareModeChange(PdfShareMode.SAVE) },
+            )
+            PdfShareModeRow(
+                label = "카카오톡으로 공유",
+                selected = shareMode == PdfShareMode.KAKAO,
+                enabled = !isExporting,
+                onSelect = { onShareModeChange(PdfShareMode.KAKAO) },
+            )
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Button(
+            onClick = onConfirm,
+            enabled = !isExporting,
+            shape = RoundedCornerShape(50.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = StoryVenueColors.Primary,
+                contentColor = Color.White,
+                disabledContainerColor = StoryVenueColors.Divider,
+                disabledContentColor = StoryVenueColors.SubText,
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+        ) {
+            if (isExporting) {
+                CircularProgressIndicator(
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(22.dp),
+                )
+            } else {
+                Text(
+                    text = "만들기",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PdfShareModeRow(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onSelect: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(
+            selected = selected,
+            onClick = onSelect,
+            enabled = enabled,
+            colors = RadioButtonDefaults.colors(
+                selectedColor = StoryVenueColors.Primary,
+            ),
+        )
+        Text(
+            text = label,
+            fontSize = 16.sp,
+            color = StoryVenueColors.OnSurface,
+            modifier = Modifier.padding(start = 4.dp),
+        )
     }
 }
