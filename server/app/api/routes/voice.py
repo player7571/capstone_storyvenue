@@ -1,5 +1,6 @@
 from functools import lru_cache
 from io import BytesIO
+import logging
 from pathlib import Path
 import re
 from uuid import UUID, uuid4
@@ -25,6 +26,7 @@ from app.services.interview import (
 from app.services.adaptive_interview import process_voice_interview_answer
 
 router = APIRouter(prefix="/voice", tags=["voice"])
+logger = logging.getLogger(__name__)
 
 INTERVIEWER_SYSTEM_PROMPT = (
     "당신은 따뜻한 자서전 인터뷰어입니다. "
@@ -32,6 +34,13 @@ INTERVIEWER_SYSTEM_PROMPT = (
 )
 AUDIO_CACHE_DIR = Path(__file__).resolve().parents[3] / ".generated-audio"
 VOICE_COMPLETED_STATUS = "completed"
+
+
+def _truncate_for_log(value: str | None, limit: int = 300) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}...(+{len(text) - limit} chars)"
 
 
 class UserAnswerInsights(BaseModel):
@@ -315,12 +324,24 @@ def _run_user_turn(
     user_id: str,
     user_text: str,
     source_type: str,
+    raw_user_text: str | None = None,
+    turn_trace_id: str | None = None,
 ) -> tuple[str, str, str | None, str | None, InterviewStateResponse | None]:
     decision = None
     reason_code = None
     interview_state = None
 
     current_state = _load_voice_interview_state(session_id)
+    logger.info(
+        "[voice_turn:%s] start session_id=%s source=%s current_question_no=%s interview_complete=%s normalized_user_text=%s raw_user_text=%s",
+        turn_trace_id or "-",
+        session_id,
+        source_type,
+        current_state.current_question_no,
+        current_state.is_interview_complete,
+        _truncate_for_log(user_text),
+        _truncate_for_log(raw_user_text),
+    )
     if current_state.is_interview_complete:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -332,6 +353,21 @@ def _run_user_turn(
     decision = outcome.decision
     reason_code = outcome.reason_code
     interview_state = InterviewStateResponse(**outcome.prompt_state.model_dump())
+    logger.info(
+        "[voice_turn:%s] assessed session_id=%s question_no=%s decision=%s reason_code=%s score=%s required_hits=%s selected_missing_slot=%s pass_route=%s filled_slots=%s missing_slots=%s summary=%s",
+        turn_trace_id or "-",
+        session_id,
+        current_state.current_question_no,
+        decision,
+        reason_code,
+        outcome.next_state.last_total_score,
+        outcome.next_state.last_required_slot_hits,
+        outcome.next_state.last_selected_missing_slot,
+        outcome.next_state.last_pass_route,
+        ",".join(outcome.filled_slots) if outcome.filled_slots else "-",
+        ",".join(outcome.missing_slots) if outcome.missing_slots else "-",
+        _truncate_for_log(outcome.answer_summary),
+    )
     if _should_persist_user_turn(decision, reason_code):
         _insert_session_message(session_id, "user", user_text)
         try:
@@ -340,15 +376,31 @@ def _run_user_turn(
                 question_no=current_state.current_question_no,
                 user_text=user_text,
                 source_type=source_type,
+                stt_raw_text=raw_user_text if source_type == "voice" else None,
             )
         except Exception:
-            pass
+            logger.warning(
+                "[voice_turn:%s] failed_to_append_question_answer_record session_id=%s question_no=%s",
+                turn_trace_id or "-",
+                session_id,
+                current_state.current_question_no,
+                exc_info=True,
+            )
     _save_voice_interview_state(session_id, outcome.next_state)
     if outcome.next_state.is_interview_complete:
         _update_voice_session_status(session_id, user_id, VOICE_COMPLETED_STATUS)
     display_user_text = user_text if _should_echo_user_text(reason_code) else ""
 
     _insert_session_message(session_id, "assistant", assistant_text)
+    logger.info(
+        "[voice_turn:%s] done session_id=%s next_question_no=%s interview_complete=%s display_user_text=%s assistant_text=%s",
+        turn_trace_id or "-",
+        session_id,
+        outcome.next_state.current_question_no,
+        outcome.next_state.is_interview_complete,
+        _truncate_for_log(display_user_text),
+        _truncate_for_log(assistant_text),
+    )
     return display_user_text, assistant_text, decision, reason_code, interview_state
 
 
@@ -358,10 +410,20 @@ async def voice_turn(
     audio_file: UploadFile = File(...),
     user_id: str = Depends(get_current_user_id),
 ) -> VoiceTurnResponse:
-    session = _get_session_or_404(session_id, user_id)
+    _get_session_or_404(session_id, user_id)
+    turn_trace_id = uuid4().hex
 
     try:
         audio_bytes = await audio_file.read()
+        logger.info(
+            "[voice_turn:%s] request session_id=%s user_id=%s filename=%s content_type=%s bytes=%s",
+            turn_trace_id,
+            session_id,
+            user_id,
+            audio_file.filename,
+            audio_file.content_type,
+            len(audio_bytes),
+        )
         raw_user_text = _transcribe_audio(audio_bytes, audio_file.filename)
         user_text = _normalize_stt_text(raw_user_text)
         display_user_text, assistant_text, decision, reason_code, interview_state = _run_user_turn(
@@ -369,12 +431,27 @@ async def voice_turn(
             user_id=user_id,
             user_text=user_text,
             source_type="voice",
+            raw_user_text=raw_user_text,
+            turn_trace_id=turn_trace_id,
         )
         tts_audio = _synthesize_tts(assistant_text)
         audio_url = _save_tts_file(session_id, tts_audio)
     except HTTPException:
+        logger.warning(
+            "[voice_turn:%s] http_exception session_id=%s user_id=%s",
+            turn_trace_id,
+            session_id,
+            user_id,
+            exc_info=True,
+        )
         raise
     except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "[voice_turn:%s] failed session_id=%s user_id=%s",
+            turn_trace_id,
+            session_id,
+            user_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"음성 턴 처리 중 오류가 발생했습니다: {exc}",
@@ -396,7 +473,8 @@ async def voice_text_turn(
     user_text: str = Form(...),
     user_id: str = Depends(get_current_user_id),
 ) -> VoiceTurnResponse:
-    session = _get_session_or_404(session_id, user_id)
+    _get_session_or_404(session_id, user_id)
+    turn_trace_id = uuid4().hex
     cleaned_text = user_text.strip()
     if not cleaned_text:
         raise HTTPException(
@@ -410,12 +488,26 @@ async def voice_text_turn(
             user_id=user_id,
             user_text=cleaned_text,
             source_type="text",
+            turn_trace_id=turn_trace_id,
         )
         tts_audio = _synthesize_tts(assistant_text)
         audio_url = _save_tts_file(session_id, tts_audio)
     except HTTPException:
+        logger.warning(
+            "[voice_text_turn:%s] http_exception session_id=%s user_id=%s",
+            turn_trace_id,
+            session_id,
+            user_id,
+            exc_info=True,
+        )
         raise
     except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "[voice_text_turn:%s] failed session_id=%s user_id=%s",
+            turn_trace_id,
+            session_id,
+            user_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"텍스트 턴 처리 중 오류가 발생했습니다: {exc}",
