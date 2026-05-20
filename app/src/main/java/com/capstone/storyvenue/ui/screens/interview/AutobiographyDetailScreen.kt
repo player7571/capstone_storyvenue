@@ -574,6 +574,7 @@ fun AutobiographyDetailScreen(
                             onClick = {
                                 shareBookTextToKakaoTalk(
                                     context = context,
+                                    bookId = detailBook.id,
                                     title = detailBook.title,
                                     subtitle = detailBook.subtitle,
                                     body = kakaoShareBody,

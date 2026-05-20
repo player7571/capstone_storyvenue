@@ -118,18 +118,17 @@ object PdfExport {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
 
-        if (kakaoIntent.resolveActivity(context.packageManager) != null) {
+        try {
             context.startActivity(kakaoIntent)
-            return
+        } catch (e: Exception) {
+            Toast.makeText(context, "카카오톡이 설치돼 있지 않아요. 다른 앱으로 공유할게요.", Toast.LENGTH_SHORT).show()
+            val fallback = Intent(Intent.ACTION_SEND).apply {
+                type = mime
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, displayName)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(fallback, "PDF 공유하기"))
         }
-
-        val fallback = Intent(Intent.ACTION_SEND).apply {
-            type = mime
-            putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_SUBJECT, displayName)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        Toast.makeText(context, "카카오톡이 설치돼 있지 않아요. 다른 앱으로 공유할게요.", Toast.LENGTH_SHORT).show()
-        context.startActivity(Intent.createChooser(fallback, "PDF 공유하기"))
     }
 }

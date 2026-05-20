@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.NavType
 import androidx.navigation.NavHostController
 import androidx.navigation.navArgument
+import androidx.navigation.navDeepLink
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -202,6 +203,9 @@ fun StoryVenueNavGraph(
             route = Routes.AUTOBIOGRAPHY_DETAIL,
             arguments = listOf(
                 navArgument("bookId") { type = NavType.StringType },
+            ),
+            deepLinks = listOf(
+                navDeepLink { uriPattern = "storyvenue://book/{bookId}" }
             ),
         ) { back ->
             val bookId = back.arguments?.getString("bookId") ?: ""
