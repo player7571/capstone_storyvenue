@@ -161,9 +161,13 @@ def _transcribe_audio(
     audio_bytes: bytes,
     filename: str | None,
 ) -> str:
+    settings = get_settings()
+    stt_language = (settings.openai_stt_language or "").strip() or None
+    stt_prompt = (settings.openai_stt_prompt or "").strip() or None
     transcription = _get_openai_client().audio.transcriptions.create(
-        model="gpt-4o-transcribe",
-        language="ko",
+        model=settings.openai_stt_model,
+        language=stt_language,
+        prompt=stt_prompt,
         file=_build_audio_buffer(audio_bytes, filename),
     )
     user_text = str(getattr(transcription, "text", "")).strip()

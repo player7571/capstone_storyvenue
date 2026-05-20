@@ -6,7 +6,9 @@ from app.services.interview.llm import get_interview_openai_client
 from app.services.interview.slot_keywords import extract_local_slots
 from app.services.interview.state import get_question_answers
 from app.services.interview.types import (
+    EmotionalTone,
     InterviewQuestion,
+    QuestionFlow,
     SlotName,
     VoiceInterviewAssessment,
     VoiceInterviewState,
@@ -21,6 +23,28 @@ ASSESSMENT_SYSTEM_PROMPT = dedent(
     - 최종 통과 여부(pass/follow_up/move_on/repeat)는 당신이 결정하지 않습니다.
     - 당신은 정보 추출과 점수화만 담당합니다.
     - filled_slots와 missing_slots에는 반드시 person, place, time, event, emotion, scene, value 중에서만 고르세요.
+    - flow_type은 반드시 default, event_sequence, person_focus, value_focus, background_memory, peer_life_memory, person_memory, legacy_message 중 하나만 고르세요.
+    - event_sequence는 사건의 흐름으로 말하는 답변입니다.
+    - person_focus는 한 사람을 중심으로 기억을 꺼내는 답변입니다.
+    - value_focus는 남기고 싶은 말이나 삶의 의미를 중심으로 말하는 답변입니다.
+    - background_memory는 어린 시절 살던 곳, 집안 분위기, 동네 모습처럼 삶의 배경을 회상하는 답변입니다.
+    - peer_life_memory는 학교나 또래 시절의 하루 생활, 친구, 집안일처럼 생활감을 회상하는 답변입니다.
+    - person_memory는 기억에 남는 사람의 성격, 함께한 장면, 그 사람의 의미를 중심으로 말하는 답변입니다.
+    - legacy_message는 지금 남기고 싶은 말, 그 말을 전하고 싶은 대상, 그 이유를 중심으로 말하는 답변입니다.
+    - default는 위 셋으로 명확히 보기 어려운 일반 회고형 답변입니다.
+    - setup_present는 사건이 무엇이었는지, 어떤 상황이 시작되었는지가 나왔는지입니다.
+    - development_present는 사건 속 장면, 행동, 전개가 나왔는지입니다.
+    - result_present는 그 뒤 어떻게 되었는지 결과가 나왔는지입니다.
+    - emotion_present는 그때의 감정이 나왔는지입니다.
+    - meaning_present는 왜 기억에 남는지, 어떤 의미였는지, 어떤 생각이 남았는지가 나왔는지입니다.
+    - person_present는 함께 있었던 사람이나 중심 인물이 분명히 언급되었는지입니다.
+    - emotional_tone은 반드시 positive, negative, fearful, warm, neutral 중 하나만 고르세요.
+    - positive는 기쁨, 뿌듯함, 반가움처럼 분명히 밝은 감정일 때만 고르세요.
+    - warm은 가족애, 정겨움, 다정함, 그리움처럼 따뜻한 정서가 중심일 때만 고르세요.
+    - negative는 힘듦, 상실감, 외로움, 속상함, 안타까움, 상처처럼 부정적인 감정일 때 고르세요.
+    - fearful은 무서움, 놀람, 공포, 숨막힘처럼 두려움이 중심일 때 고르세요.
+    - neutral은 감정이 거의 드러나지 않을 때만 고르세요.
+    - 힘들었던 일, 따돌림, 아픈 기억, 상처, 막막함, 고생, 사고, 잃어버림 같은 답변은 positive나 warm으로 고르지 마세요.
     - relevance_score는 0~2:
       0 = 질문과 거의 무관함
       1 = 부분적으로 관련 있음
@@ -51,7 +75,6 @@ QUESTION_LIKE_ENDINGS = (
     "있어요?",
     "었나요",
 )
-
 
 def _sanitize_slots(
     raw_slots: list[str],
@@ -150,6 +173,28 @@ def _looks_like_question_echo(question: InterviewQuestion, user_text: str) -> bo
         return True
     return False
 
+def _sanitize_flow_type(raw_value: str | None, fallback: QuestionFlow) -> QuestionFlow:
+    value = str(raw_value or "").strip().lower()
+    if value in {
+        "default",
+        "event_sequence",
+        "person_focus",
+        "value_focus",
+        "background_memory",
+        "peer_life_memory",
+        "person_memory",
+        "legacy_message",
+    }:
+        return value  # type: ignore[return-value]
+    return fallback
+
+
+def _sanitize_emotional_tone(raw_value: str | None) -> EmotionalTone:
+    value = str(raw_value or "").strip().lower()
+    if value in {"positive", "negative", "fearful", "warm", "neutral"}:
+        return value  # type: ignore[return-value]
+    return "neutral"
+
 
 def _build_assessment_input(
     question: InterviewQuestion,
@@ -157,34 +202,31 @@ def _build_assessment_input(
     user_text: str,
 ) -> str:
     current_answers = get_question_answers(state, state.current_question_no)
-    previous_answers = "\n".join(f"- {text}" for text in current_answers if text.strip())
-    previous_answers_text = previous_answers or "- 없음"
-    last_follow_up = state.last_follow_up_question or "없음"
+    previous_answers_text = " | ".join(text for text in current_answers if text.strip()) or "없음"
 
     return dedent(
         f"""
-        현재 메인 질문:
+        현재 질문:
         {question.main_question}
 
         질문 힌트:
         {question.hint}
 
-        이 질문에서 보고 싶은 정보:
-        {", ".join(question.target_slots)}
+        질문에서 중요하게 보고 싶은 정보:
+        target_slots={", ".join(question.target_slots) if question.target_slots else "없음"}
+        required_slots={", ".join(question.required_slots) if question.required_slots else "없음"}
+        expected_flow={question.follow_up_flow}
 
-        이 질문에서 특히 중요하게 보고 싶은 정보:
-        {", ".join(question.required_slots) if question.required_slots else "없음"}
-
-        이전까지 모인 답변:
+        같은 질문에서 이전까지 나온 누적 답변:
         {previous_answers_text}
 
-        직전에 물었던 보조 질문:
-        {last_follow_up}
+        마지막 follow-up 질문:
+        {state.last_follow_up_question or "없음"}
 
         이번 사용자 답변:
         {user_text}
 
-        지금까지 사용한 보조 질문 횟수:
+        현재 follow_up_count:
         {state.follow_up_count}
         """
     ).strip()
@@ -241,6 +283,25 @@ def _normalize_assessment(
         assessment.missing_slots = [
             slot for slot in question.target_slots if slot not in assessment.filled_slots
         ] or list(question.target_slots)
+
+    fallback_flow: QuestionFlow = question.follow_up_flow if question.follow_up_flow != "default" else "default"
+    assessment.flow_type = _sanitize_flow_type(assessment.flow_type, fallback_flow)
+    assessment.emotional_tone = _sanitize_emotional_tone(assessment.emotional_tone)
+    assessment.setup_present = bool(assessment.setup_present)
+    assessment.development_present = bool(assessment.development_present)
+    assessment.result_present = bool(assessment.result_present)
+    assessment.emotion_present = bool(assessment.emotion_present)
+    assessment.meaning_present = bool(assessment.meaning_present)
+    assessment.person_present = bool(assessment.person_present)
+
+    if "person" in assessment.filled_slots:
+        assessment.person_present = True
+    if "emotion" in assessment.filled_slots:
+        assessment.emotion_present = True
+    if "value" in assessment.filled_slots:
+        assessment.meaning_present = True
+    if "event" in assessment.filled_slots:
+        assessment.setup_present = assessment.setup_present or True
 
     return assessment
 

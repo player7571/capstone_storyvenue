@@ -9,7 +9,32 @@ ChapterType = Literal["childhood", "youth", "career", "love", "reflection"]
 SlotName = Literal["person", "place", "time", "event", "emotion", "scene", "value"]
 TurnDecision = Literal["pass", "follow_up", "move_on", "repeat"]
 QuestionStatus = Literal["main", "follow_up", "completed"]
-StoryQuality = Literal["none", "basic", "ready"]
+StoryQuality = Literal["none", "basic", "almost_ready", "ready"]
+QuestionFlow = Literal[
+    "default",
+    "event_sequence",
+    "person_focus",
+    "value_focus",
+    "background_memory",
+    "peer_life_memory",
+    "person_memory",
+    "legacy_message",
+]
+EmotionalTone = Literal["positive", "negative", "fearful", "warm", "neutral"]
+AckTone = Literal["comfort", "fear_ack", "warm", "celebrate", "neutral"]
+QuestionAxis = Literal["event", "scene", "result", "emotion", "reason", "person", "none"]
+QuestionFocus = Literal["setup", "development", "result", "emotion", "meaning", "person", "none"]
+FollowUpGoal = Literal[
+    "deepen_person",
+    "deepen_scene",
+    "deepen_result",
+    "deepen_event",
+    "deepen_emotion",
+    "deepen_reason",
+    "refocus",
+    "close",
+    "retry",
+]
 
 
 class InterviewQuestion(BaseModel):
@@ -25,6 +50,10 @@ class InterviewQuestion(BaseModel):
     alt_pass_routes: list[list[SlotName]] = Field(default_factory=list)
     story_generatable_routes: list[list[SlotName]] = Field(default_factory=list)
     story_generatable_min_length: int = 30
+    story_min_detail_score: int = 1
+    story_min_distinct_slots: int = 2
+    story_min_reflection_score: int = 0
+    follow_up_flow: QuestionFlow = "default"
     base_follow_ups: int = 2
     near_pass_extra_follow_ups: int = 1
 
@@ -78,6 +107,14 @@ class VoiceInterviewAssessment(BaseModel):
     relevance_score: int = 0
     detail_score: int = 0
     reflection_score: int = 0
+    flow_type: QuestionFlow = "default"
+    emotional_tone: EmotionalTone = "neutral"
+    person_present: bool = False
+    setup_present: bool = False
+    development_present: bool = False
+    result_present: bool = False
+    emotion_present: bool = False
+    meaning_present: bool = False
     transcript_unclear: bool = False
     off_topic: bool = False
     question_echo: bool = False
@@ -91,11 +128,20 @@ class InterviewerAcknowledgementResponse(BaseModel):
     acknowledgement: str
 
 
+class InterviewerTurnResponse(BaseModel):
+    assistant_text: str
+    next_question: str | None = None
+    ack_tone: AckTone | None = None
+    question_axis: QuestionAxis | None = None
+    question_focus: QuestionFocus | None = None
+
+
 class VoiceInterviewDecision(BaseModel):
     decision: TurnDecision
     reason_code: str
     selected_missing_slot: SlotName | None = None
     pass_route: str | None = None
+    follow_up_goal: FollowUpGoal | None = None
     total_score: int = 0
     required_slot_hits: int = 0
     follow_up_question: str | None = None

@@ -1,6 +1,8 @@
 from app.services.interview.types import (
+    FollowUpGoal,
     InterviewQuestion,
     SlotName,
+    TurnDecision,
     VoiceInterviewAssessment,
     VoiceInterviewDecision,
     VoiceInterviewState,
@@ -75,16 +77,46 @@ def matches_story_generatable_route(
     return any(all(slot in assessment.filled_slots for slot in route) for route in question.story_generatable_routes)
 
 
+def passes_story_ready_threshold(
+    question: InterviewQuestion,
+    assessment: VoiceInterviewAssessment,
+    cleaned_text: str,
+) -> bool:
+    if assessment.transcript_unclear or assessment.question_echo or assessment.off_topic:
+        return False
+    if assessment.relevance_score < 1:
+        return False
+    if len(cleaned_text.strip()) < question.story_generatable_min_length:
+        return False
+    if assessment.detail_score < question.story_min_detail_score:
+        return False
+    if assessment.reflection_score < question.story_min_reflection_score:
+        return False
+    if len(set(assessment.filled_slots)) < question.story_min_distinct_slots:
+        return False
+
+    if question.follow_up_flow == "event_sequence":
+        if not assessment.setup_present:
+            return False
+        if not assessment.development_present:
+            return False
+        if not (assessment.result_present or assessment.emotion_present):
+            return False
+        if question.story_min_reflection_score > 0 and not (
+            assessment.emotion_present or assessment.meaning_present
+        ):
+            return False
+        return True
+
+    return matches_story_generatable_route(question, assessment)
+
+
 def is_story_generatable_answer(
     question: InterviewQuestion,
     assessment: VoiceInterviewAssessment,
     cleaned_text: str,
 ) -> bool:
-    if assessment.transcript_unclear or assessment.question_echo:
-        return False
-    if len(cleaned_text.strip()) < question.story_generatable_min_length:
-        return False
-    return matches_story_generatable_route(question, assessment)
+    return passes_story_ready_threshold(question, assessment, cleaned_text)
 
 
 def pick_missing_slot(
@@ -103,6 +135,190 @@ def pick_missing_slot(
     return question.target_slots[0]
 
 
+def _derive_event_sequence_goal(
+    question: InterviewQuestion,
+    assessment: VoiceInterviewAssessment,
+) -> FollowUpGoal:
+    if not assessment.setup_present:
+        return "deepen_event"
+    if not assessment.development_present:
+        return "deepen_scene"
+    if not assessment.result_present:
+        return "deepen_result"
+    if not assessment.emotion_present:
+        return "deepen_emotion"
+    if not assessment.meaning_present and (
+        "value" in question.target_slots or question.chapter_type == "reflection"
+    ):
+        return "deepen_reason"
+    if not assessment.person_present and "person" in question.target_slots:
+        return "deepen_person"
+    return "deepen_event"
+
+
+def _derive_person_focus_goal(
+    question: InterviewQuestion,
+    assessment: VoiceInterviewAssessment,
+) -> FollowUpGoal:
+    if not assessment.person_present:
+        return "deepen_person"
+    if not assessment.setup_present:
+        return "deepen_event"
+    if not assessment.emotion_present:
+        return "deepen_emotion"
+    if not assessment.meaning_present and "value" in question.target_slots:
+        return "deepen_reason"
+    if not assessment.development_present and "scene" in question.target_slots:
+        return "deepen_scene"
+    return "deepen_event"
+
+
+def _derive_background_memory_goal(
+    question: InterviewQuestion,
+    assessment: VoiceInterviewAssessment,
+) -> FollowUpGoal:
+    if "place" not in assessment.filled_slots:
+        return "deepen_scene"
+    if not assessment.person_present:
+        return "deepen_person"
+    if not assessment.development_present:
+        return "deepen_scene"
+    if not assessment.emotion_present:
+        return "deepen_emotion"
+    return "deepen_scene"
+
+
+def _derive_peer_life_memory_goal(
+    question: InterviewQuestion,
+    assessment: VoiceInterviewAssessment,
+) -> FollowUpGoal:
+    if not assessment.setup_present or not assessment.development_present:
+        return "deepen_event"
+    if not assessment.person_present:
+        return "deepen_person"
+    if not assessment.emotion_present:
+        return "deepen_emotion"
+    if "value" in question.target_slots and not assessment.meaning_present:
+        return "deepen_reason"
+    return "deepen_event"
+
+
+def _derive_person_memory_goal(
+    question: InterviewQuestion,
+    assessment: VoiceInterviewAssessment,
+) -> FollowUpGoal:
+    if not assessment.person_present:
+        return "deepen_person"
+    if not assessment.setup_present:
+        return "deepen_event"
+    if not assessment.development_present:
+        return "deepen_scene"
+    if not assessment.emotion_present:
+        return "deepen_emotion"
+    if "value" in question.target_slots and not assessment.meaning_present:
+        return "deepen_reason"
+    return "deepen_person"
+
+
+def _derive_value_focus_goal(
+    question: InterviewQuestion,
+    assessment: VoiceInterviewAssessment,
+) -> FollowUpGoal:
+    if not assessment.meaning_present:
+        return "deepen_reason"
+    if not assessment.setup_present:
+        return "deepen_event"
+    if not assessment.emotion_present:
+        return "deepen_emotion"
+    if not assessment.person_present and "person" in question.target_slots:
+        return "deepen_person"
+    return "deepen_reason"
+
+
+def _looks_like_generic_legacy_target(user_text: str) -> bool:
+    lowered = user_text.strip().lower()
+    if not lowered:
+        return True
+    generic_tokens = ("가족", "사람들", "모두", "우리", "서로", "누군가", "다들")
+    specific_tokens = ("아이", "아들", "딸", "손자", "손녀", "남편", "아내", "친구", "동생", "형", "누나", "언니", "오빠", "어머니", "아버지")
+    if any(token in lowered for token in specific_tokens):
+        return False
+    return any(token in lowered for token in generic_tokens)
+
+
+def _derive_legacy_message_goal(
+    question: InterviewQuestion,
+    assessment: VoiceInterviewAssessment,
+    user_text: str,
+) -> FollowUpGoal:
+    if "value" not in assessment.filled_slots and not assessment.meaning_present:
+        return "deepen_reason"
+    if not assessment.person_present or _looks_like_generic_legacy_target(user_text):
+        return "deepen_person"
+    if not assessment.meaning_present:
+        return "deepen_reason"
+    if not assessment.setup_present:
+        return "deepen_event"
+    if not assessment.emotion_present:
+        return "deepen_emotion"
+    return "deepen_reason"
+
+
+def derive_follow_up_goal(
+    question: InterviewQuestion,
+    assessment: VoiceInterviewAssessment,
+    decision: TurnDecision,
+    selected_missing_slot: SlotName | None,
+    user_text: str,
+) -> FollowUpGoal:
+    if decision == "pass":
+        if (
+            question.follow_up_flow == "event_sequence"
+            and question.chapter_type == "reflection"
+            and assessment.setup_present
+            and assessment.development_present
+            and assessment.result_present
+            and assessment.emotion_present
+            and not assessment.meaning_present
+        ):
+            return "deepen_reason"
+        return "close"
+    if decision == "repeat":
+        return "retry"
+    if decision == "move_on":
+        return "close"
+    if assessment.off_topic:
+        return "refocus"
+
+    if question.follow_up_flow == "event_sequence":
+        return _derive_event_sequence_goal(question, assessment)
+    if question.follow_up_flow == "background_memory":
+        return _derive_background_memory_goal(question, assessment)
+    if question.follow_up_flow == "peer_life_memory":
+        return _derive_peer_life_memory_goal(question, assessment)
+    if question.follow_up_flow == "person_memory":
+        return _derive_person_memory_goal(question, assessment)
+    if question.follow_up_flow == "legacy_message":
+        return _derive_legacy_message_goal(question, assessment, user_text)
+    if question.follow_up_flow == "person_focus":
+        return _derive_person_focus_goal(question, assessment)
+    if question.follow_up_flow == "value_focus":
+        return _derive_value_focus_goal(question, assessment)
+
+    slot = selected_missing_slot
+    if slot == "person":
+        return "deepen_person"
+    if slot in {"place", "time", "scene"}:
+        return "deepen_scene"
+    if slot == "value":
+        return "deepen_reason"
+    if slot == "event":
+        return "deepen_event"
+    if slot == "emotion":
+        return "deepen_emotion"
+    return "deepen_event"
+
+
 def decide_interview_turn(
     question: InterviewQuestion,
     state: VoiceInterviewState,
@@ -112,11 +328,13 @@ def decide_interview_turn(
     total_score = total_assessment_score(assessment)
     required_hits = count_required_slot_hits(question, assessment.filled_slots)
     meaningful_answer = looks_like_meaningful_answer(cleaned_text)
+    story_ready_candidate = passes_story_ready_threshold(question, assessment, cleaned_text)
 
     if assessment.question_echo:
         return VoiceInterviewDecision(
             decision="repeat",
             reason_code="question_echo",
+            follow_up_goal="retry",
             total_score=total_score,
             required_slot_hits=required_hits,
         )
@@ -125,24 +343,27 @@ def decide_interview_turn(
         return VoiceInterviewDecision(
             decision="repeat",
             reason_code="transcript_unclear",
+            follow_up_goal="retry",
             total_score=total_score,
             required_slot_hits=required_hits,
         )
 
-    if passes_question_rules(question, assessment):
+    if passes_question_rules(question, assessment) and story_ready_candidate:
         return VoiceInterviewDecision(
             decision="pass",
             reason_code="score_and_slots",
+            follow_up_goal="close",
             total_score=total_score,
             required_slot_hits=required_hits,
         )
 
     pass_route = matched_alt_pass_route(question, assessment)
-    if pass_route is not None:
+    if pass_route is not None and story_ready_candidate:
         return VoiceInterviewDecision(
             decision="pass",
             reason_code="alt_pass_route",
             pass_route=pass_route,
+            follow_up_goal="close",
             total_score=total_score,
             required_slot_hits=required_hits,
         )
@@ -159,6 +380,13 @@ def decide_interview_turn(
         decision="follow_up",
         reason_code=reason_code,
         selected_missing_slot=selected_missing_slot,
+        follow_up_goal=derive_follow_up_goal(
+            question,
+            assessment,
+            "follow_up",
+            selected_missing_slot,
+            cleaned_text,
+        ),
         total_score=total_score,
         required_slot_hits=required_hits,
     )

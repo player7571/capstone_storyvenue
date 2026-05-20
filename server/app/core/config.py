@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     auth_refresh_token_pepper: str | None = Field(default=None, validation_alias="AUTH_REFRESH_TOKEN_PEPPER")
     allow_dev_user_header: bool = Field(default=True, validation_alias="ALLOW_DEV_USER_HEADER")
     openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
+    openai_stt_model: str = Field(default="gpt-4o-transcribe", validation_alias="OPENAI_STT_MODEL")
+    openai_stt_language: str = Field(default="ko", validation_alias="OPENAI_STT_LANGUAGE")
+    openai_stt_prompt: str | None = Field(default=None, validation_alias="OPENAI_STT_PROMPT")
     openai_safety_model: str = Field(default="gpt-4.1-mini", validation_alias="OPENAI_SAFETY_MODEL")
     openai_safety_prompt: str | None = Field(default=None, validation_alias="OPENAI_SAFETY_PROMPT")
 
