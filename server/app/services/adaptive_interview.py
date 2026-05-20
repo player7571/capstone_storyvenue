@@ -1,3 +1,5 @@
+import logging
+
 from app.services.interview import (
     InterviewQuestion,
     SKIP_KEYWORDS,
@@ -20,6 +22,15 @@ from app.services.interview import (
     request_interviewer_acknowledgement,
     request_voice_interview_assessment,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _truncate_for_log(value: str | None, limit: int = 240) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}...(+{len(text) - limit} chars)"
 
 
 def assess_voice_interview_answer(
@@ -51,6 +62,26 @@ def assess_voice_interview_answer(
 
     assessment = request_voice_interview_assessment(question, state, cleaned_text)
     decision = decide_interview_turn(question, state, assessment, cleaned_text)
+    logger.info(
+        "[interview_assessment] question_no=%s follow_up_count=%s user_text=%s summary=%s filled_slots=%s missing_slots=%s relevance=%s detail=%s reflection=%s transcript_unclear=%s off_topic=%s question_echo=%s decision=%s reason_code=%s total_score=%s required_hits=%s selected_missing_slot=%s",
+        question.question_no,
+        state.follow_up_count,
+        _truncate_for_log(cleaned_text),
+        _truncate_for_log(assessment.answer_summary),
+        ",".join(assessment.filled_slots) if assessment.filled_slots else "-",
+        ",".join(assessment.missing_slots) if assessment.missing_slots else "-",
+        assessment.relevance_score,
+        assessment.detail_score,
+        assessment.reflection_score,
+        assessment.transcript_unclear,
+        assessment.off_topic,
+        assessment.question_echo,
+        decision.decision,
+        decision.reason_code,
+        decision.total_score,
+        decision.required_slot_hits,
+        decision.selected_missing_slot,
+    )
 
     if decision.decision == "follow_up":
         decision.follow_up_question = request_follow_up_question(
@@ -66,6 +97,13 @@ def assess_voice_interview_answer(
                 decision,
                 cleaned_text,
             )
+        logger.info(
+            "[interview_follow_up] question_no=%s reason_code=%s selected_missing_slot=%s follow_up_question=%s",
+            question.question_no,
+            decision.reason_code,
+            decision.selected_missing_slot,
+            _truncate_for_log(decision.follow_up_question),
+        )
 
     return assessment, decision
 
