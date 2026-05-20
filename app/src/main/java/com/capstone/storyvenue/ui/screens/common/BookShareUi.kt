@@ -2,6 +2,11 @@ package com.capstone.storyvenue.ui.screens.common
 
 import android.content.Context
 import android.content.Intent
+import com.kakao.sdk.share.ShareClient
+import com.kakao.sdk.template.model.Button as KakaoButton
+import com.kakao.sdk.template.model.Content
+import com.kakao.sdk.template.model.FeedTemplate
+import com.kakao.sdk.template.model.Link
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,18 +44,42 @@ import com.capstone.storyvenue.ui.theme.StoryVenueColors
 enum class PdfShareMode { SAVE, KAKAO }
 
 fun shareBookTextToKakaoTalk(context: Context, bookId: String, title: String, subtitle: String?, body: String) {
-    val subtitleLine = if (!subtitle.isNullOrBlank()) "\n$subtitle" else ""
-    val deepLink = "storyvenue://book/$bookId"
-    val text = "📖 $title$subtitleLine\n\n$body\n\n— StoryVenue에서 작성된 자서전\n앱에서 보기: $deepLink"
+    val kakaoLink = Link(androidExecutionParams = mapOf("bookId" to bookId))
+    val description = buildString {
+        if (!subtitle.isNullOrBlank()) append("$subtitle\n\n")
+        append(body.take(150).let { if (body.length > 150) "$it…" else it })
+    }
+    val feed = FeedTemplate(
+        content = Content(
+            title = title,
+            description = description,
+            link = kakaoLink,
+        ),
+        buttons = listOf(
+            KakaoButton(title = "앱에서 보기", link = kakaoLink),
+        ),
+    )
 
-    val kakaoIntent = Intent(Intent.ACTION_SEND).apply {
+    if (ShareClient.instance.isKakaoTalkSharingAvailable(context)) {
+        ShareClient.instance.shareDefault(context, feed) { result, error ->
+            if (result != null) context.startActivity(result.intent)
+            else sharePlainText(context, bookId, title, subtitle, body)
+        }
+    } else {
+        sharePlainText(context, bookId, title, subtitle, body)
+    }
+}
+
+private fun sharePlainText(context: Context, bookId: String, title: String, subtitle: String?, body: String) {
+    val subtitleLine = if (!subtitle.isNullOrBlank()) "\n$subtitle" else ""
+    val text = "📖 $title$subtitleLine\n\n$body\n\n— StoryVenue에서 작성된 자서전\n앱에서 보기: storyvenue://book/$bookId"
+    val intent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
         putExtra(Intent.EXTRA_TEXT, text)
         setPackage("com.kakao.talk")
     }
-
     try {
-        context.startActivity(kakaoIntent)
+        context.startActivity(intent)
     } catch (e: Exception) {
         context.startActivity(
             Intent.createChooser(
