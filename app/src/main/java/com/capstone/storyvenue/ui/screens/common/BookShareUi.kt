@@ -38,10 +38,10 @@ import com.capstone.storyvenue.ui.theme.StoryVenueColors
 
 enum class PdfShareMode { SAVE, KAKAO }
 
-fun shareBookTextToKakaoTalk(context: Context, title: String, subtitle: String?, body: String) {
-    val preview = body.take(200).let { if (body.length > 200) "$it…" else it }
+fun shareBookTextToKakaoTalk(context: Context, bookId: String, title: String, subtitle: String?, body: String) {
     val subtitleLine = if (!subtitle.isNullOrBlank()) "\n$subtitle" else ""
-    val text = "📖 $title$subtitleLine\n\n$preview\n\n- StoryVenue에서 작성된 자서전"
+    val deepLink = "storyvenue://book/$bookId"
+    val text = "📖 $title$subtitleLine\n\n$body\n\n— StoryVenue에서 작성된 자서전\n앱에서 보기: $deepLink"
 
     val kakaoIntent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
@@ -49,9 +49,9 @@ fun shareBookTextToKakaoTalk(context: Context, title: String, subtitle: String?,
         setPackage("com.kakao.talk")
     }
 
-    if (kakaoIntent.resolveActivity(context.packageManager) != null) {
+    try {
         context.startActivity(kakaoIntent)
-    } else {
+    } catch (e: Exception) {
         context.startActivity(
             Intent.createChooser(
                 Intent(Intent.ACTION_SEND).apply {

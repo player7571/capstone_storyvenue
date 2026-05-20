@@ -709,6 +709,7 @@ fun FeedDetailScreen(
                             onClick = {
                                 shareBookTextToKakaoTalk(
                                     context = context,
+                                    bookId = post?.bookId ?: "",
                                     title = currentBook.title,
                                     subtitle = currentBook.subtitle,
                                     body = buildSharedAutobiographyBody(currentBook),
