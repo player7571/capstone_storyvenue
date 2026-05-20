@@ -149,7 +149,7 @@ html, body {
 
 /* ─── 챕터 ─── */
 .chapter {
-    page-break-before: always;
+    margin-top: 14mm;
 }
 
 .chapter-title {
