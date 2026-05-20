@@ -205,7 +205,8 @@ fun StoryVenueNavGraph(
                 navArgument("bookId") { type = NavType.StringType },
             ),
             deepLinks = listOf(
-                navDeepLink { uriPattern = "storyvenue://book/{bookId}" }
+                navDeepLink { uriPattern = "storyvenue://book/{bookId}" },
+                navDeepLink { uriPattern = "storyvenue://kakaolink?bookId={bookId}" },
             ),
         ) { back ->
             val bookId = back.arguments?.getString("bookId") ?: ""
