@@ -21,7 +21,17 @@ QuestionFlow = Literal[
     "legacy_message",
 ]
 EmotionalTone = Literal["positive", "negative", "fearful", "warm", "neutral"]
+EmotionalBlend = Literal[
+    "none",
+    "warm_relief",
+    "support",
+    "gratitude",
+    "pride_after_hardship",
+    "sad_warmth",
+    "regret",
+]
 AckTone = Literal["comfort", "fear_ack", "warm", "celebrate", "neutral"]
+EmotionAlignment = Literal["aligned", "over_positive", "ungrounded"]
 QuestionAxis = Literal["event", "scene", "result", "emotion", "reason", "person", "none"]
 QuestionFocus = Literal["setup", "development", "result", "emotion", "meaning", "person", "none"]
 FollowUpGoal = Literal[
@@ -109,6 +119,7 @@ class VoiceInterviewAssessment(BaseModel):
     reflection_score: int = 0
     flow_type: QuestionFlow = "default"
     emotional_tone: EmotionalTone = "neutral"
+    emotional_blend: EmotionalBlend = "none"
     person_present: bool = False
     setup_present: bool = False
     development_present: bool = False
@@ -132,6 +143,7 @@ class InterviewerTurnResponse(BaseModel):
     assistant_text: str
     next_question: str | None = None
     ack_tone: AckTone | None = None
+    emotion_alignment: EmotionAlignment = "aligned"
     question_axis: QuestionAxis | None = None
     question_focus: QuestionFocus | None = None
 

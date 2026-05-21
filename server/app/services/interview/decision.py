@@ -7,6 +7,7 @@ from app.services.interview.types import (
     VoiceInterviewDecision,
     VoiceInterviewState,
 )
+from app.services.interview.question_prompts import get_question_goal_priority
 
 SKIP_KEYWORDS = (
     "기억이 안",
@@ -133,6 +134,65 @@ def pick_missing_slot(
         if slot not in assessment.filled_slots:
             return slot
     return question.target_slots[0]
+
+
+def _goal_for_slot(slot: SlotName | None) -> FollowUpGoal | None:
+    if slot == "person":
+        return "deepen_person"
+    if slot in {"place", "time", "scene"}:
+        return "deepen_scene"
+    if slot == "value":
+        return "deepen_reason"
+    if slot == "event":
+        return "deepen_event"
+    if slot == "emotion":
+        return "deepen_emotion"
+    return None
+
+
+def _goal_needs_follow_up(
+    question: InterviewQuestion,
+    assessment: VoiceInterviewAssessment,
+    goal: FollowUpGoal,
+) -> bool:
+    missing_slots = set(assessment.missing_slots)
+    target_slots = set(question.target_slots)
+
+    if goal == "deepen_event":
+        return not assessment.setup_present or "event" in missing_slots
+    if goal == "deepen_scene":
+        return not assessment.development_present or bool({"place", "time", "scene"} & missing_slots)
+    if goal == "deepen_result":
+        return not assessment.result_present
+    if goal == "deepen_emotion":
+        return not assessment.emotion_present or "emotion" in missing_slots
+    if goal == "deepen_reason":
+        return not assessment.meaning_present or bool({"value"} & missing_slots)
+    if goal == "deepen_person":
+        return not assessment.person_present or ("person" in target_slots and "person" in missing_slots)
+    return False
+
+
+def _derive_question_policy_goal(
+    question: InterviewQuestion,
+    assessment: VoiceInterviewAssessment,
+    selected_missing_slot: SlotName | None,
+) -> FollowUpGoal | None:
+    priority = get_question_goal_priority(question)
+    if not priority:
+        return None
+
+    for goal in priority:
+        if _goal_needs_follow_up(question, assessment, goal):
+            return goal
+
+    slot_goal = _goal_for_slot(selected_missing_slot)
+    if slot_goal in priority:
+        return slot_goal
+
+    if "deepen_reason" in priority:
+        return "deepen_reason"
+    return priority[-1]
 
 
 def _derive_event_sequence_goal(
@@ -290,6 +350,10 @@ def derive_follow_up_goal(
     if assessment.off_topic:
         return "refocus"
 
+    policy_goal = _derive_question_policy_goal(question, assessment, selected_missing_slot)
+    if policy_goal is not None:
+        return policy_goal
+
     if question.follow_up_flow == "event_sequence":
         return _derive_event_sequence_goal(question, assessment)
     if question.follow_up_flow == "background_memory":
@@ -305,17 +369,9 @@ def derive_follow_up_goal(
     if question.follow_up_flow == "value_focus":
         return _derive_value_focus_goal(question, assessment)
 
-    slot = selected_missing_slot
-    if slot == "person":
-        return "deepen_person"
-    if slot in {"place", "time", "scene"}:
-        return "deepen_scene"
-    if slot == "value":
-        return "deepen_reason"
-    if slot == "event":
-        return "deepen_event"
-    if slot == "emotion":
-        return "deepen_emotion"
+    slot_goal = _goal_for_slot(selected_missing_slot)
+    if slot_goal is not None:
+        return slot_goal
     return "deepen_event"
 
 

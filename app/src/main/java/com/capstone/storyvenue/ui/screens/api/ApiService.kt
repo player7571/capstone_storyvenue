@@ -79,6 +79,9 @@ object ApiService {
     fun getSessionMessages(token: String, sessionId: String): Result<List<SessionMessageData>> =
         VoiceApi.getSessionMessages(token, sessionId)
 
+    fun getVoiceAudioStatus(token: String, audioId: String): Result<VoiceAudioStatusData> =
+        VoiceApi.getVoiceAudioStatus(token, audioId)
+
     fun generateChapter(
         token: String,
         sessionId: String,
@@ -267,9 +270,17 @@ data class VoiceTurnData(
     val userText: String,
     val assistantText: String,
     val audioUrl: String? = null,
+    val audioStatus: String = "disabled",
+    val audioId: String? = null,
     val decision: String? = null,
     val reasonCode: String? = null,
     val interviewState: InterviewPromptData? = null,
+)
+
+data class VoiceAudioStatusData(
+    val audioId: String,
+    val audioStatus: String,
+    val audioUrl: String? = null,
 )
 
 data class PhotoAttachmentData(

@@ -1,4 +1,5 @@
 import logging
+import time
 
 from app.services.interview import (
     InterviewQuestion,
@@ -42,6 +43,22 @@ def _truncate_for_log(value: str | None, limit: int = 240) -> str:
     return f"{text[:limit]}...(+{len(text) - limit} chars)"
 
 
+def _elapsed_ms(started_at: float) -> int:
+    return int((time.perf_counter() - started_at) * 1000)
+
+
+def _build_cumulative_answer_text(
+    state: VoiceInterviewState,
+    question_no: int,
+    user_text: str,
+) -> str:
+    answers = [answer.strip() for answer in get_question_answers(state, question_no) if answer.strip()]
+    current = user_text.strip()
+    if current and current not in answers:
+        answers.append(current)
+    return "\n".join(answers).strip()
+
+
 def assess_voice_interview_answer(
     question: InterviewQuestion,
     state: VoiceInterviewState,
@@ -69,19 +86,29 @@ def assess_voice_interview_answer(
         )
         return assessment, decision
 
-    assessment = request_voice_interview_assessment(question, state, cleaned_text)
-    decision = decide_interview_turn(question, state, assessment, cleaned_text)
+    cumulative_text = _build_cumulative_answer_text(state, question.question_no, cleaned_text)
+    assessment_started_at = time.perf_counter()
+    assessment = request_voice_interview_assessment(question, state, cumulative_text)
+    assessment_ms = _elapsed_ms(assessment_started_at)
+    decision_started_at = time.perf_counter()
+    decision = decide_interview_turn(question, state, assessment, cumulative_text)
+    decision_ms = _elapsed_ms(decision_started_at)
     logger.info(
-        "[interview_assessment] question_no=%s follow_up_count=%s user_text=%s summary=%s filled_slots=%s missing_slots=%s relevance=%s detail=%s reflection=%s transcript_unclear=%s off_topic=%s question_echo=%s decision=%s reason_code=%s total_score=%s required_hits=%s selected_missing_slot=%s",
+        "[interview_assessment] question_no=%s follow_up_count=%s assessment_ms=%s decision_ms=%s user_text=%s cumulative_chars=%s summary=%s filled_slots=%s missing_slots=%s relevance=%s detail=%s reflection=%s emotional_tone=%s emotional_blend=%s transcript_unclear=%s off_topic=%s question_echo=%s decision=%s reason_code=%s total_score=%s required_hits=%s selected_missing_slot=%s",
         question.question_no,
         state.follow_up_count,
+        assessment_ms,
+        decision_ms,
         _truncate_for_log(cleaned_text),
+        len(cumulative_text),
         _truncate_for_log(assessment.answer_summary),
         ",".join(assessment.filled_slots) if assessment.filled_slots else "-",
         ",".join(assessment.missing_slots) if assessment.missing_slots else "-",
         assessment.relevance_score,
         assessment.detail_score,
         assessment.reflection_score,
+        assessment.emotional_tone,
+        assessment.emotional_blend,
         assessment.transcript_unclear,
         assessment.off_topic,
         assessment.question_echo,
@@ -206,7 +233,9 @@ def _build_interviewer_result(
     prompt_state: VoiceInterviewPromptState,
     user_text: str,
 ) -> InterviewerTurnResponse:
+    started_at = time.perf_counter()
     try:
+        llm_started_at = time.perf_counter()
         result = request_interviewer_turn(
             question,
             state,
@@ -215,11 +244,14 @@ def _build_interviewer_result(
             prompt_state,
             user_text,
         )
+        llm_ms = _elapsed_ms(llm_started_at)
     except Exception:
         result = None
+        llm_ms = _elapsed_ms(started_at)
 
     if result is None:
         # FALLBACK: LLM이 최종 인터뷰어 응답을 한 번에 생성하지 못했을 때만 사용합니다.
+        fallback_started_at = time.perf_counter()
         result = build_interviewer_turn_fallback(
             question,
             assessment,
@@ -227,8 +259,12 @@ def _build_interviewer_result(
             prompt_state,
             user_text,
         )
+        fallback_ms = _elapsed_ms(fallback_started_at)
+    else:
+        fallback_ms = 0
 
     if decision.decision == "follow_up" and not result.next_question:
+        fallback_question_started_at = time.perf_counter()
         fallback_question = build_follow_up_fallback(
             question,
             assessment,
@@ -241,10 +277,21 @@ def _build_interviewer_result(
                 "next_question": fallback_question,
             }
         )
+        fallback_ms += _elapsed_ms(fallback_question_started_at)
 
     if decision.decision != "follow_up":
         result = result.model_copy(update={"next_question": None})
 
+    logger.info(
+        "[interviewer_result] question_no=%s decision=%s reason_code=%s llm_ms=%s fallback_ms=%s total_ms=%s used_fallback=%s",
+        question.question_no,
+        decision.decision,
+        decision.reason_code,
+        llm_ms,
+        fallback_ms,
+        _elapsed_ms(started_at),
+        str(fallback_ms > 0).lower(),
+    )
     return result
 
 
@@ -397,7 +444,12 @@ def process_voice_interview_answer(
     question = get_interview_question(state.current_question_no)
     assessment, decision = assess_voice_interview_answer(question, state, user_text)
     summary = assessment.answer_summary.strip() or user_text.strip()
-    story_generatable = is_story_generatable_answer(question, assessment, user_text.strip())
+    cumulative_text = _build_cumulative_answer_text(
+        state,
+        state.current_question_no,
+        user_text,
+    )
+    story_generatable = is_story_generatable_answer(question, assessment, cumulative_text)
 
     if decision.decision == "repeat":
         prompt_state = build_voice_interview_prompt_state(state)
@@ -407,7 +459,7 @@ def process_voice_interview_answer(
             assessment,
             decision,
             prompt_state,
-            user_text.strip(),
+            cumulative_text,
         )
         return VoiceInterviewTurnOutcome(
             decision="repeat",
@@ -428,11 +480,11 @@ def process_voice_interview_answer(
             assessment,
             decision,
             prompt_state,
-            user_text.strip(),
+            cumulative_text,
         )
         decision.follow_up_question = (
             interviewer_result.next_question
-            or build_follow_up_fallback(question, assessment, decision, user_text.strip())
+            or build_follow_up_fallback(question, assessment, decision, cumulative_text)
         ).strip()
         next_state = _build_follow_up_state(
             state,
@@ -463,7 +515,7 @@ def process_voice_interview_answer(
             assessment,
             decision,
             prompt_state,
-            user_text.strip(),
+            cumulative_text,
         )
         return VoiceInterviewTurnOutcome(
             decision="pass",
@@ -492,7 +544,7 @@ def process_voice_interview_answer(
         assessment,
         decision,
         prompt_state,
-        user_text.strip(),
+        cumulative_text,
     )
 
     return VoiceInterviewTurnOutcome(

@@ -132,6 +132,8 @@ fun VoiceInterviewScreen(
     val interviewPrompt = uiState.interviewPrompt
     val assistantText = uiState.assistantText
     val latestAudioUrl = uiState.latestAudioUrl
+    val latestAudioStatus = uiState.latestAudioStatus
+    val latestAudioId = uiState.latestAudioId
     val lastRecordedFileName = uiState.lastRecordedFileName
     val recordingSeconds = uiState.recordingSeconds
     val snackbarHostState = remember { SnackbarHostState() }
@@ -146,6 +148,7 @@ fun VoiceInterviewScreen(
     val recorderController = remember { AudioRecorderController() }
     val playerController = remember { AudioPlayerController() }
     var showBasicStoryDialog by remember { mutableStateOf(false) }
+    var autoPlayedAudioUrl by remember { mutableStateOf<String?>(null) }
 
     fun loadPhotoThumbnail(url: String) {
         scope.launch {
@@ -370,6 +373,39 @@ fun VoiceInterviewScreen(
         while (isRecording) {
             delay(1000)
             viewModel.onRecordingTick()
+        }
+    }
+
+    LaunchedEffect(token, latestAudioId, latestAudioStatus) {
+        val audioId = latestAudioId
+        if (token.isBlank() || audioId.isNullOrBlank() || latestAudioStatus != "pending") {
+            return@LaunchedEffect
+        }
+        repeat(20) {
+            delay(1000)
+            val result = withContext(Dispatchers.IO) {
+                ApiService.getVoiceAudioStatus(token, audioId)
+            }
+            val audio = result.getOrNull() ?: return@LaunchedEffect
+            viewModel.applyVoiceAudioStatus(audio)
+            if (audio.audioStatus != "pending") {
+                return@LaunchedEffect
+            }
+        }
+    }
+
+    LaunchedEffect(latestAudioUrl) {
+        val audioUrl = latestAudioUrl
+        if (
+            !audioUrl.isNullOrBlank() &&
+            autoPlayedAudioUrl != audioUrl &&
+            !isRecording &&
+            !isUploadingAudio &&
+            !isSubmittingText &&
+            !isPlayingAudio
+        ) {
+            autoPlayedAudioUrl = audioUrl
+            playAssistantAudio(audioUrl)
         }
     }
 
@@ -867,7 +903,15 @@ fun VoiceInterviewScreen(
                 }
             }
 
-            if (!latestAudioUrl.isNullOrBlank()) {
+            if (latestAudioStatus == "pending") {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "AI 음성 준비 중...",
+                    fontFamily = SBAggroFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = StoryVenueColors.Primary,
+                )
+            } else if (!latestAudioUrl.isNullOrBlank()) {
                 Spacer(Modifier.height(8.dp))
                 TextButton(
                     onClick = {

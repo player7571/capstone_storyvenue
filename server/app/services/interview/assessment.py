@@ -1,11 +1,18 @@
 from difflib import SequenceMatcher
+import logging
 import re
 from textwrap import dedent
 
-from app.services.interview.llm import get_interview_openai_client
+from app.services.interview.llm import (
+    build_interview_prompt_cache_body,
+    get_interview_openai_client,
+    log_interview_prompt_cache_usage,
+)
+from app.services.interview.question_prompts import build_assessment_system_prompt
 from app.services.interview.slot_keywords import extract_local_slots
 from app.services.interview.state import get_question_answers
 from app.services.interview.types import (
+    EmotionalBlend,
     EmotionalTone,
     InterviewQuestion,
     QuestionFlow,
@@ -14,54 +21,7 @@ from app.services.interview.types import (
     VoiceInterviewState,
 )
 
-ASSESSMENT_SYSTEM_PROMPT = dedent(
-    """
-    당신은 노인 사용자의 자서전 인터뷰를 돕는 한국어 인터뷰 분석 도우미입니다.
-    현재 질문과 사용자의 누적 답변을 보고, 어떤 정보가 이미 나왔는지 구조화해서 반환하세요.
-
-    중요:
-    - 최종 통과 여부(pass/follow_up/move_on/repeat)는 당신이 결정하지 않습니다.
-    - 당신은 정보 추출과 점수화만 담당합니다.
-    - filled_slots와 missing_slots에는 반드시 person, place, time, event, emotion, scene, value 중에서만 고르세요.
-    - flow_type은 반드시 default, event_sequence, person_focus, value_focus, background_memory, peer_life_memory, person_memory, legacy_message 중 하나만 고르세요.
-    - event_sequence는 사건의 흐름으로 말하는 답변입니다.
-    - person_focus는 한 사람을 중심으로 기억을 꺼내는 답변입니다.
-    - value_focus는 남기고 싶은 말이나 삶의 의미를 중심으로 말하는 답변입니다.
-    - background_memory는 어린 시절 살던 곳, 집안 분위기, 동네 모습처럼 삶의 배경을 회상하는 답변입니다.
-    - peer_life_memory는 학교나 또래 시절의 하루 생활, 친구, 집안일처럼 생활감을 회상하는 답변입니다.
-    - person_memory는 기억에 남는 사람의 성격, 함께한 장면, 그 사람의 의미를 중심으로 말하는 답변입니다.
-    - legacy_message는 지금 남기고 싶은 말, 그 말을 전하고 싶은 대상, 그 이유를 중심으로 말하는 답변입니다.
-    - default는 위 셋으로 명확히 보기 어려운 일반 회고형 답변입니다.
-    - setup_present는 사건이 무엇이었는지, 어떤 상황이 시작되었는지가 나왔는지입니다.
-    - development_present는 사건 속 장면, 행동, 전개가 나왔는지입니다.
-    - result_present는 그 뒤 어떻게 되었는지 결과가 나왔는지입니다.
-    - emotion_present는 그때의 감정이 나왔는지입니다.
-    - meaning_present는 왜 기억에 남는지, 어떤 의미였는지, 어떤 생각이 남았는지가 나왔는지입니다.
-    - person_present는 함께 있었던 사람이나 중심 인물이 분명히 언급되었는지입니다.
-    - emotional_tone은 반드시 positive, negative, fearful, warm, neutral 중 하나만 고르세요.
-    - positive는 기쁨, 뿌듯함, 반가움처럼 분명히 밝은 감정일 때만 고르세요.
-    - warm은 가족애, 정겨움, 다정함, 그리움처럼 따뜻한 정서가 중심일 때만 고르세요.
-    - negative는 힘듦, 상실감, 외로움, 속상함, 안타까움, 상처처럼 부정적인 감정일 때 고르세요.
-    - fearful은 무서움, 놀람, 공포, 숨막힘처럼 두려움이 중심일 때 고르세요.
-    - neutral은 감정이 거의 드러나지 않을 때만 고르세요.
-    - 힘들었던 일, 따돌림, 아픈 기억, 상처, 막막함, 고생, 사고, 잃어버림 같은 답변은 positive나 warm으로 고르지 마세요.
-    - relevance_score는 0~2:
-      0 = 질문과 거의 무관함
-      1 = 부분적으로 관련 있음
-      2 = 질문에 분명히 맞는 답변
-    - detail_score는 0~2:
-      0 = 정보가 거의 없음
-      1 = 정보가 1개 정도 있음
-      2 = 정보가 2개 이상 비교적 또렷함
-    - reflection_score는 0~1:
-      0 = 감정/의미/가치가 거의 없음
-      1 = 감정이나 의미가 드러남
-    - transcript_unclear는 소음이 많거나 뜻을 거의 파악하기 어려울 때만 true로 하세요.
-    - off_topic은 말 자체는 들리지만 현재 질문과 방향이 꽤 어긋날 때만 true로 하세요.
-    - question_echo는 사용자가 답하지 않고 현재 질문이나 질문에 매우 가까운 문장을 그대로 되묻는 경우만 true로 하세요.
-    - answer_summary는 사용자의 답변을 1문장 이내로 짧게 요약합니다.
-    """
-).strip()
+logger = logging.getLogger(__name__)
 
 QUESTION_LIKE_ENDINGS = (
     "?",
@@ -196,6 +156,42 @@ def _sanitize_emotional_tone(raw_value: str | None) -> EmotionalTone:
     return "neutral"
 
 
+def _sanitize_emotional_blend(
+    raw_value: str | None,
+    emotional_tone: EmotionalTone,
+) -> EmotionalBlend:
+    value = str(raw_value or "").strip().lower()
+    allowed = {
+        "none",
+        "warm_relief",
+        "support",
+        "gratitude",
+        "pride_after_hardship",
+        "sad_warmth",
+        "regret",
+    }
+    if value not in allowed:
+        return "none"
+
+    # The blend is only a secondary signal. Keep it conservative so it cannot
+    # flip a painful/fearful answer into an overly positive acknowledgement.
+    if emotional_tone == "fearful" and value in {"warm_relief", "support", "sad_warmth"}:
+        return value  # type: ignore[return-value]
+    if emotional_tone == "negative" and value in {
+        "warm_relief",
+        "support",
+        "gratitude",
+        "sad_warmth",
+        "regret",
+    }:
+        return value  # type: ignore[return-value]
+    if emotional_tone == "positive" and value in {"gratitude", "pride_after_hardship"}:
+        return value  # type: ignore[return-value]
+    if emotional_tone == "warm" and value in {"gratitude", "support", "sad_warmth", "regret"}:
+        return value  # type: ignore[return-value]
+    return "none"
+
+
 def _build_assessment_input(
     question: InterviewQuestion,
     state: VoiceInterviewState,
@@ -254,6 +250,7 @@ def _normalize_assessment(
         assessment.relevance_score = 0
         assessment.detail_score = 0
         assessment.reflection_score = 0
+        assessment.emotional_blend = "none"
         assessment.transcript_unclear = False
         assessment.off_topic = False
         if not assessment.answer_summary.strip():
@@ -282,11 +279,15 @@ def _normalize_assessment(
     if not assessment.missing_slots:
         assessment.missing_slots = [
             slot for slot in question.target_slots if slot not in assessment.filled_slots
-        ] or list(question.target_slots)
+        ]
 
     fallback_flow: QuestionFlow = question.follow_up_flow if question.follow_up_flow != "default" else "default"
     assessment.flow_type = _sanitize_flow_type(assessment.flow_type, fallback_flow)
     assessment.emotional_tone = _sanitize_emotional_tone(assessment.emotional_tone)
+    assessment.emotional_blend = _sanitize_emotional_blend(
+        assessment.emotional_blend,
+        assessment.emotional_tone,
+    )
     assessment.setup_present = bool(assessment.setup_present)
     assessment.development_present = bool(assessment.development_present)
     assessment.result_present = bool(assessment.result_present)
@@ -313,11 +314,14 @@ def request_voice_interview_assessment(
 ) -> VoiceInterviewAssessment:
     response = get_interview_openai_client().responses.parse(
         model="gpt-4.1-mini",
-        instructions=ASSESSMENT_SYSTEM_PROMPT,
+        instructions=build_assessment_system_prompt(question),
         input=_build_assessment_input(question, state, user_text),
         temperature=0.2,
+        max_output_tokens=360,
         text_format=VoiceInterviewAssessment,
+        extra_body=build_interview_prompt_cache_body("assessment", question),
     )
+    log_interview_prompt_cache_usage(logger, "assessment", question, response)
 
     parsed = response.output_parsed
     if parsed is None:
