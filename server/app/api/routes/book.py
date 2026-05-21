@@ -1,6 +1,9 @@
+import urllib.parse
+from io import BytesIO
 from uuid import UUID, uuid5
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import StreamingResponse
 
 from app.api.dependencies.auth import get_current_user_id
 from app.api.schemas.book import (
@@ -15,7 +18,14 @@ from app.api.schemas.book import (
 )
 from app.db.supabase import get_supabase
 from app.services import generate_autobiography_book, generate_book_subtitle
+from app.services.book_pdf import (
+    ALLOWED_IMAGE_MIME,
+    prepare_cover_image_data_url,
+    render_book_pdf,
+)
 from app.services.safety import check_content_safety
+
+MAX_COVER_IMAGE_BYTES = 10 * 1024 * 1024
 
 router = APIRouter(prefix="/book", tags=["book"])
 
@@ -542,3 +552,149 @@ async def update_book(
         )
 
     return _build_book_detail_response(updated.data[0])
+
+
+def _get_raw_book_or_404(book_id: UUID, user_id: str) -> dict:
+    result = (
+        get_supabase()
+        .table("book_versions")
+        .select("*")
+        .eq("id", str(book_id))
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="책을 찾을 수 없습니다.",
+        )
+    return result.data
+
+
+def _fetch_author_name(user_id: str) -> str:
+    try:
+        result = (
+            get_supabase()
+            .table("profiles")
+            .select("name")
+            .eq("id", user_id)
+            .maybe_single()
+            .execute()
+        )
+    except Exception:
+        return "익명"
+    name = (result.data or {}).get("name") if result and result.data else None
+    return (name or "").strip() or "익명"
+
+
+def _ensure_subtitle(raw_book: dict, user_id: str) -> str | None:
+    existing = (raw_book.get("subtitle") or "").strip()
+    if existing:
+        return existing
+
+    visible_chapters = _visible_book_chapters(raw_book.get("chapters") or [])
+    chapter_titles = [
+        str(chapter.get("title") or "").strip()
+        for chapter in visible_chapters
+        if str(chapter.get("title") or "").strip()
+    ]
+    if not chapter_titles:
+        return None
+
+    try:
+        generated = generate_book_subtitle(
+            book_title=str(raw_book.get("title") or "").strip() or "자서전",
+            chapter_titles=chapter_titles,
+        )
+    except Exception:
+        return None
+
+    generated = (generated or "").strip() or None
+    if not generated:
+        return None
+
+    if not _book_is_shared(UUID(str(raw_book["id"]))):
+        try:
+            get_supabase().table("book_versions").update({"subtitle": generated}).eq(
+                "id", str(raw_book["id"])
+            ).eq("user_id", user_id).execute()
+        except Exception:
+            pass
+
+    return generated
+
+
+def _content_disposition_filename(title: str) -> str:
+    safe_title = (title or "자서전").strip() or "자서전"
+    quoted = urllib.parse.quote(f"{safe_title}.pdf")
+    return f"attachment; filename=\"book.pdf\"; filename*=UTF-8''{quoted}"
+
+
+@router.post("/{book_id}/pdf")
+async def export_book_pdf(
+    book_id: UUID,
+    include_cover: bool = Form(False),
+    cover_image: UploadFile | None = File(None),
+    user_id: str = Depends(get_current_user_id),
+):
+    raw_book = _get_raw_book_or_404(book_id, user_id)
+
+    cover_image_data_url: str | None = None
+    if include_cover and cover_image is not None:
+        if (cover_image.content_type or "").lower() not in ALLOWED_IMAGE_MIME:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="JPEG, PNG, WebP 이미지만 표지로 사용할 수 있어요.",
+            )
+        image_bytes = await cover_image.read()
+        if not image_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="표지 이미지가 비어 있어요.",
+            )
+        if len(image_bytes) > MAX_COVER_IMAGE_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="표지 이미지 크기는 10MB 이하여야 해요.",
+            )
+        try:
+            cover_image_data_url = prepare_cover_image_data_url(
+                image_bytes=image_bytes,
+                mime_type=cover_image.content_type,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+
+    subtitle = _ensure_subtitle(raw_book, user_id)
+    author_name = _fetch_author_name(user_id)
+
+    try:
+        pdf_bytes = render_book_pdf(
+            title=str(raw_book.get("title") or "").strip() or "자서전",
+            subtitle=subtitle,
+            chapters=list(raw_book.get("chapters") or []),
+            author_name=author_name,
+            created_at=raw_book.get("created_at"),
+            include_cover=include_cover,
+            cover_image_data_url=cover_image_data_url,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"PDF 생성 중 오류가 발생했습니다: {exc}",
+        ) from exc
+
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": _content_disposition_filename(
+                str(raw_book.get("title") or "자서전")
+            ),
+            "Content-Length": str(len(pdf_bytes)),
+        },
+    )

@@ -1,0 +1,173 @@
+@page {
+    size: A5;
+    margin: 22mm 18mm 24mm 18mm;
+
+    @bottom-center {
+        content: counter(page);
+        font-family: 'Noto Sans CJK KR', 'Noto Sans KR', serif;
+        font-size: 9pt;
+        color: #888;
+    }
+}
+
+@page cover {
+    size: A5;
+    margin: 0;
+
+    @bottom-center {
+        content: none;
+    }
+}
+
+@page :blank {
+    @bottom-center {
+        content: none;
+    }
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Noto Sans CJK KR', 'Noto Sans KR', serif;
+    font-size: 11pt;
+    line-height: 1.85;
+    color: #1d1d1f;
+}
+
+/* ─── 표지 ─── */
+.cover {
+    page: cover;
+    page-break-after: always;
+    position: relative;
+    width: 148mm;
+    height: 210mm;
+    overflow: hidden;
+    color: #ffffff;
+    background: #2c2a28;
+}
+
+.cover.text-only {
+    background: linear-gradient(160deg, #3a322b 0%, #1f1c19 100%);
+}
+
+.cover .cover-image {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+}
+
+.cover.with-image .cover-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.55) 60%, rgba(0,0,0,0.85) 100%);
+}
+
+.cover .cover-text {
+    position: absolute;
+    left: 18mm;
+    right: 18mm;
+    bottom: 24mm;
+    text-align: left;
+}
+
+.cover .cover-title {
+    margin: 0 0 8mm 0;
+    font-size: 28pt;
+    font-weight: 700;
+    line-height: 1.3;
+    word-break: keep-all;
+}
+
+.cover .cover-subtitle {
+    margin: 0 0 12mm 0;
+    font-size: 12pt;
+    font-weight: 400;
+    line-height: 1.5;
+    opacity: 0.92;
+    word-break: keep-all;
+}
+
+.cover .cover-meta {
+    margin: 0;
+    font-size: 10.5pt;
+    letter-spacing: 0.05em;
+    opacity: 0.85;
+}
+
+.cover .cover-author {
+    display: block;
+    margin-bottom: 2mm;
+    font-weight: 500;
+}
+
+.cover .cover-date {
+    display: block;
+}
+
+/* ─── 목차 ─── */
+.toc {
+    page-break-after: always;
+}
+
+.toc-title {
+    margin: 0 0 14mm 0;
+    font-size: 20pt;
+    font-weight: 700;
+    text-align: center;
+    letter-spacing: 0.1em;
+}
+
+.toc-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.toc-list li {
+    margin-bottom: 6mm;
+    font-size: 11.5pt;
+}
+
+.toc-list a {
+    display: block;
+    color: inherit;
+    text-decoration: none;
+}
+
+.toc-list a::after {
+    content: target-counter(attr(href), page);
+    float: right;
+    color: #555;
+}
+
+.toc-list .toc-leader {
+    display: inline-block;
+    width: 100%;
+    overflow: hidden;
+}
+
+/* ─── 챕터 ─── */
+.chapter {
+    margin-top: 14mm;
+}
+
+.chapter-title {
+    margin: 6mm 0 10mm 0;
+    font-size: 18pt;
+    font-weight: 700;
+    line-height: 1.4;
+    word-break: keep-all;
+}
+
+.chapter p {
+    margin: 0 0 4mm 0;
+    text-indent: 1em;
+    text-align: justify;
+    word-break: keep-all;
+    overflow-wrap: break-word;
+}
+
+.chapter p:first-of-type {
+    text-indent: 0;
+}

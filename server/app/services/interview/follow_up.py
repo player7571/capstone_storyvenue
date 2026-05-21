@@ -1,3 +1,4 @@
+import logging
 from textwrap import dedent
 
 from app.services.interview.decision import looks_like_meaningful_answer, pick_missing_slot
@@ -18,6 +19,16 @@ from app.services.interview.types import (
     VoiceInterviewPromptState,
     VoiceInterviewState,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _truncate_for_log(value: str | None, limit: int = 300) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}...(+{len(text) - limit} chars)"
+
 
 FOLLOW_UP_GENERATION_SYSTEM_PROMPT = dedent(
     """
@@ -241,17 +252,34 @@ def request_follow_up_question(
     decision: VoiceInterviewDecision,
     user_text: str,
 ) -> str | None:
+    generation_input = _build_follow_up_generation_input(question, assessment, decision, user_text)
+    logger.info(
+        "[follow_up_generation] question_no=%s reason_code=%s selected_missing_slot=%s input=%s",
+        question.question_no,
+        decision.reason_code,
+        decision.selected_missing_slot,
+        _truncate_for_log(generation_input),
+    )
     response = get_interview_openai_client().responses.parse(
         model="gpt-4.1-mini",
         instructions=FOLLOW_UP_GENERATION_SYSTEM_PROMPT,
-        input=_build_follow_up_generation_input(question, assessment, decision, user_text),
+        input=generation_input,
         temperature=0.6,
         text_format=FollowUpQuestionResponse,
     )
     parsed = response.output_parsed
     if parsed is None:
+        logger.warning(
+            "[follow_up_generation] question_no=%s parsed_output_missing",
+            question.question_no,
+        )
         return None
     question_text = parsed.follow_up_question.strip()
+    logger.info(
+        "[follow_up_generation] question_no=%s output=%s",
+        question.question_no,
+        _truncate_for_log(question_text),
+    )
     return question_text or None
 
 

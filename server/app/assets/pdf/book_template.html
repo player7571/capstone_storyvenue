@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <title>{{ title }}</title>
+    <style>{{ css|safe }}</style>
+</head>
+<body>
+{% if include_cover %}
+    <section class="cover {% if cover_image_data_url %}with-image{% else %}text-only{% endif %}">
+        {% if cover_image_data_url %}
+        <div class="cover-image" style="background-image: url('{{ cover_image_data_url }}');"></div>
+        <div class="cover-overlay"></div>
+        {% endif %}
+        <div class="cover-text">
+            <h1 class="cover-title">{{ title }}</h1>
+            {% if subtitle %}<p class="cover-subtitle">{{ subtitle }}</p>{% endif %}
+            <p class="cover-meta">
+                <span class="cover-author">{{ author_name }} 지음</span>
+                <span class="cover-date">{{ created_at_display }}</span>
+            </p>
+        </div>
+    </section>
+{% endif %}
+
+    <section class="toc">
+        <h2 class="toc-title">목차</h2>
+        <ul class="toc-list">
+        {% for chapter in chapters %}
+            <li><a href="#chapter-{{ loop.index }}">{{ chapter.title }}</a></li>
+        {% endfor %}
+        </ul>
+    </section>
+
+    {% for chapter in chapters %}
+    <section class="chapter" id="chapter-{{ loop.index }}">
+        <h2 class="chapter-title">{{ chapter.title }}</h2>
+        {% for paragraph in chapter.paragraphs %}
+        <p>{{ paragraph }}</p>
+        {% endfor %}
+    </section>
+    {% endfor %}
+</body>
+</html>

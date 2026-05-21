@@ -1,3 +1,5 @@
+import logging
+
 from app.services.interview import (
     InterviewQuestion,
     InterviewerTurnResponse,
@@ -30,6 +32,15 @@ _STORY_QUALITY_RANK = {
 _RELAXED_EVENT_SEQUENCE_QUESTIONS = {2, 4, 6, 8}
 _STRICT_EVENT_SEQUENCE_QUESTIONS = {7, 9}
 
+logger = logging.getLogger(__name__)
+
+
+def _truncate_for_log(value: str | None, limit: int = 240) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}...(+{len(text) - limit} chars)"
+
 
 def assess_voice_interview_answer(
     question: InterviewQuestion,
@@ -60,6 +71,26 @@ def assess_voice_interview_answer(
 
     assessment = request_voice_interview_assessment(question, state, cleaned_text)
     decision = decide_interview_turn(question, state, assessment, cleaned_text)
+    logger.info(
+        "[interview_assessment] question_no=%s follow_up_count=%s user_text=%s summary=%s filled_slots=%s missing_slots=%s relevance=%s detail=%s reflection=%s transcript_unclear=%s off_topic=%s question_echo=%s decision=%s reason_code=%s total_score=%s required_hits=%s selected_missing_slot=%s",
+        question.question_no,
+        state.follow_up_count,
+        _truncate_for_log(cleaned_text),
+        _truncate_for_log(assessment.answer_summary),
+        ",".join(assessment.filled_slots) if assessment.filled_slots else "-",
+        ",".join(assessment.missing_slots) if assessment.missing_slots else "-",
+        assessment.relevance_score,
+        assessment.detail_score,
+        assessment.reflection_score,
+        assessment.transcript_unclear,
+        assessment.off_topic,
+        assessment.question_echo,
+        decision.decision,
+        decision.reason_code,
+        decision.total_score,
+        decision.required_slot_hits,
+        decision.selected_missing_slot,
+    )
 
     return assessment, decision
 

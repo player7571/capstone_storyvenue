@@ -54,6 +54,9 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
 
+    // ── Kakao SDK ────────────────────────────────────────────────────────────
+    implementation("com.kakao.sdk:v2-share:2.20.6")
+
     // ── Navigation / UI ─────────────────────────────────────────────────────
     implementation("androidx.navigation:navigation-compose:2.7.7")
     implementation("androidx.compose.material:material-icons-extended")
