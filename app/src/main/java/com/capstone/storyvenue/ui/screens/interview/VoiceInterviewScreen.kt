@@ -15,7 +15,9 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -130,6 +132,8 @@ fun VoiceInterviewScreen(
     val interviewPrompt = uiState.interviewPrompt
     val assistantText = uiState.assistantText
     val latestAudioUrl = uiState.latestAudioUrl
+    val latestAudioStatus = uiState.latestAudioStatus
+    val latestAudioId = uiState.latestAudioId
     val lastRecordedFileName = uiState.lastRecordedFileName
     val recordingSeconds = uiState.recordingSeconds
     val snackbarHostState = remember { SnackbarHostState() }
@@ -144,6 +148,7 @@ fun VoiceInterviewScreen(
     val recorderController = remember { AudioRecorderController() }
     val playerController = remember { AudioPlayerController() }
     var showBasicStoryDialog by remember { mutableStateOf(false) }
+    var autoPlayedAudioUrl by remember { mutableStateOf<String?>(null) }
 
     fun loadPhotoThumbnail(url: String) {
         scope.launch {
@@ -371,6 +376,39 @@ fun VoiceInterviewScreen(
         }
     }
 
+    LaunchedEffect(token, latestAudioId, latestAudioStatus) {
+        val audioId = latestAudioId
+        if (token.isBlank() || audioId.isNullOrBlank() || latestAudioStatus != "pending") {
+            return@LaunchedEffect
+        }
+        repeat(20) {
+            delay(1000)
+            val result = withContext(Dispatchers.IO) {
+                ApiService.getVoiceAudioStatus(token, audioId)
+            }
+            val audio = result.getOrNull() ?: return@LaunchedEffect
+            viewModel.applyVoiceAudioStatus(audio)
+            if (audio.audioStatus != "pending") {
+                return@LaunchedEffect
+            }
+        }
+    }
+
+    LaunchedEffect(latestAudioUrl) {
+        val audioUrl = latestAudioUrl
+        if (
+            !audioUrl.isNullOrBlank() &&
+            autoPlayedAudioUrl != audioUrl &&
+            !isRecording &&
+            !isUploadingAudio &&
+            !isSubmittingText &&
+            !isPlayingAudio
+        ) {
+            autoPlayedAudioUrl = audioUrl
+            playAssistantAudio(audioUrl)
+        }
+    }
+
     DisposableEffect(Unit) {
         onDispose {
             recorderController.release(deleteTempFile = true)
@@ -579,17 +617,15 @@ fun VoiceInterviewScreen(
             if (currentPrompt != null) {
                 Card(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(220.dp),
+                        .fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(containerColor = StoryVenueColors.Surface),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 ) {
                     Column(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .padding(24.dp),
-                        verticalArrangement = Arrangement.Center,
+                            .fillMaxWidth()
+                            .padding(10.dp),
                     ) {
                         Text(
                             text = if (isInterviewComplete) {
@@ -795,29 +831,87 @@ fun VoiceInterviewScreen(
 
             if (userText.isNotBlank()) {
                 Spacer(Modifier.height(16.dp))
-                Text(
-                    text = "내 답변: $userText",
-                    fontSize = 16.sp,
-                    color = StoryVenueColors.SubText,
-                    fontFamily = SBAggroFamily,
-                    textAlign = TextAlign.Center,
+                Card(
                     modifier = Modifier.fillMaxWidth(),
-                )
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = StoryVenueColors.White),
+                    border = BorderStroke(1.dp, StoryVenueColors.Divider),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 18.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text(
+                            text = "내 답변",
+                            fontSize = 13.sp,
+                            color = StoryVenueColors.SubText,
+                            fontFamily = SBAggroFamily,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = userText,
+                            fontSize = 18.sp,
+                            color = StoryVenueColors.OnSurface,
+                            fontFamily = SBAggroFamily,
+                            lineHeight = 28.sp,
+                        )
+                    }
+                }
             }
 
             if (displayAssistantText.isNotBlank()) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "$assistantLabel: $displayAssistantText",
-                    fontSize = 16.sp,
-                    color = StoryVenueColors.Primary,
-                    fontFamily = SBAggroFamily,
-                    textAlign = TextAlign.Center,
+                Spacer(Modifier.height(12.dp))
+                Card(
                     modifier = Modifier.fillMaxWidth(),
-                )
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = StoryVenueColors.White),
+                    border = BorderStroke(1.5.dp, StoryVenueColors.PrimaryLight),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 18.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50.dp))
+                                .background(StoryVenueColors.PrimaryDark)
+                                .padding(horizontal = 12.dp, vertical = 7.dp),
+                        ) {
+                            Text(
+                                text = assistantLabel,
+                                fontSize = 13.sp,
+                                color = StoryVenueColors.White,
+                                fontFamily = SBAggroFamily,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+
+                        Text(
+                            text = displayAssistantText,
+                            fontSize = 21.sp,
+                            color = StoryVenueColors.OnSurface,
+                            fontFamily = SBAggroFamily,
+                            lineHeight = 32.sp,
+                        )
+                    }
+                }
             }
 
-            if (!latestAudioUrl.isNullOrBlank()) {
+            if (latestAudioStatus == "pending") {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "AI 음성 준비 중...",
+                    fontFamily = SBAggroFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = StoryVenueColors.Primary,
+                )
+            } else if (!latestAudioUrl.isNullOrBlank()) {
                 Spacer(Modifier.height(8.dp))
                 TextButton(
                     onClick = {
@@ -867,6 +961,20 @@ fun VoiceInterviewScreen(
                     "이야기 생성하기"
                 },
             )
+
+            if (currentQuestionStoryQuality == "almost_ready" && !currentQuestionStoryReady) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = "조금만 더 들려주시면 초안이 가능해요.",
+                    fontFamily = SBAggroFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    color = StoryVenueColors.Primary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
 
             if (canOpenAutobiography) {
                 Spacer(Modifier.height(12.dp))

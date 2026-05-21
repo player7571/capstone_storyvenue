@@ -109,4 +109,20 @@ object VoiceApi {
             Result.failure(e)
         }
     }
+
+    fun getVoiceAudioStatus(token: String, audioId: String): Result<VoiceAudioStatusData> {
+        return try {
+            val response = apiClient.newCall(
+                authGet("$API_BASE_URL/voice/audio/$audioId", token)
+            ).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                Result.success(parseVoiceAudioStatusData(JSONObject(body)))
+            } else {
+                Result.failure(Exception(parseErrorMessage(body, "AI 음성 상태 조회 실패")))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }

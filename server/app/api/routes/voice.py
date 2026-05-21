@@ -3,15 +3,17 @@ from io import BytesIO
 import logging
 from pathlib import Path
 import re
+from threading import Lock
+import time
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
 from app.api.dependencies.auth import get_current_user_id
 from app.api.schemas.sessions import InterviewStateResponse
-from app.api.schemas.voice import VoiceTurnResponse
+from app.api.schemas.voice import VoiceAudioStatusResponse, VoiceTurnResponse
 from app.core.config import get_settings
 from app.db.supabase import get_supabase
 from app.services.interview import (
@@ -34,6 +36,8 @@ INTERVIEWER_SYSTEM_PROMPT = (
 )
 AUDIO_CACHE_DIR = Path(__file__).resolve().parents[3] / ".generated-audio"
 VOICE_COMPLETED_STATUS = "completed"
+TTS_JOBS: dict[str, dict[str, str | None]] = {}
+TTS_JOBS_LOCK = Lock()
 
 
 def _truncate_for_log(value: str | None, limit: int = 300) -> str:
@@ -41,6 +45,10 @@ def _truncate_for_log(value: str | None, limit: int = 300) -> str:
     if len(text) <= limit:
         return text
     return f"{text[:limit]}...(+{len(text) - limit} chars)"
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return int((time.perf_counter() - started_at) * 1000)
 
 
 class UserAnswerInsights(BaseModel):
@@ -170,9 +178,13 @@ def _transcribe_audio(
     audio_bytes: bytes,
     filename: str | None,
 ) -> str:
+    settings = get_settings()
+    stt_language = (settings.openai_stt_language or "").strip() or None
+    stt_prompt = (settings.openai_stt_prompt or "").strip() or None
     transcription = _get_openai_client().audio.transcriptions.create(
-        model="gpt-4o-transcribe",
-        language="ko",
+        model=settings.openai_stt_model,
+        language=stt_language,
+        prompt=stt_prompt,
         file=_build_audio_buffer(audio_bytes, filename),
     )
     user_text = str(getattr(transcription, "text", "")).strip()
@@ -319,6 +331,85 @@ def _save_tts_file(session_id: UUID, audio_bytes: bytes) -> str:
     return f"/generated-audio/{filename}"
 
 
+def _set_tts_job(
+    audio_id: str,
+    *,
+    audio_status: str,
+    audio_url: str | None = None,
+    error_message: str | None = None,
+) -> None:
+    with TTS_JOBS_LOCK:
+        current = TTS_JOBS.get(audio_id, {})
+        current["audio_status"] = audio_status
+        current["audio_url"] = audio_url
+        current["error_message"] = error_message
+        TTS_JOBS[audio_id] = current
+
+
+def _generate_tts_background(
+    audio_id: str,
+    session_id: UUID,
+    assistant_text: str,
+    turn_trace_id: str,
+) -> None:
+    try:
+        logger.info(
+            "[voice_tts:%s] start audio_id=%s session_id=%s text=%s",
+            turn_trace_id,
+            audio_id,
+            session_id,
+            _truncate_for_log(assistant_text),
+        )
+        audio_bytes = _synthesize_tts(assistant_text)
+        audio_url = _save_tts_file(session_id, audio_bytes)
+        _set_tts_job(audio_id, audio_status="ready", audio_url=audio_url)
+        logger.info(
+            "[voice_tts:%s] ready audio_id=%s session_id=%s audio_url=%s bytes=%s",
+            turn_trace_id,
+            audio_id,
+            session_id,
+            audio_url,
+            len(audio_bytes),
+        )
+    except Exception as exc:  # noqa: BLE001
+        _set_tts_job(audio_id, audio_status="failed", error_message=str(exc))
+        logger.exception(
+            "[voice_tts:%s] failed audio_id=%s session_id=%s",
+            turn_trace_id,
+            audio_id,
+            session_id,
+        )
+
+
+def _enqueue_tts_job(
+    background_tasks: BackgroundTasks,
+    session_id: UUID,
+    user_id: str,
+    assistant_text: str,
+    turn_trace_id: str,
+) -> tuple[str | None, str, str | None]:
+    if not assistant_text.strip():
+        return None, "disabled", None
+
+    audio_id = uuid4().hex
+    with TTS_JOBS_LOCK:
+        TTS_JOBS[audio_id] = {
+            "audio_status": "pending",
+            "audio_url": None,
+            "session_id": str(session_id),
+            "user_id": user_id,
+            "error_message": None,
+        }
+    background_tasks.add_task(
+        _generate_tts_background,
+        audio_id,
+        session_id,
+        assistant_text,
+        turn_trace_id,
+    )
+    return audio_id, "pending", None
+
+
 def _run_user_turn(
     session_id: UUID,
     user_id: str,
@@ -327,18 +418,22 @@ def _run_user_turn(
     raw_user_text: str | None = None,
     turn_trace_id: str | None = None,
 ) -> tuple[str, str, str | None, str | None, InterviewStateResponse | None]:
+    started_at = time.perf_counter()
     decision = None
     reason_code = None
     interview_state = None
 
+    load_started_at = time.perf_counter()
     current_state = _load_voice_interview_state(session_id)
+    load_ms = _elapsed_ms(load_started_at)
     logger.info(
-        "[voice_turn:%s] start session_id=%s source=%s current_question_no=%s interview_complete=%s normalized_user_text=%s raw_user_text=%s",
+        "[voice_turn:%s] start session_id=%s source=%s current_question_no=%s interview_complete=%s load_state_ms=%s normalized_user_text=%s raw_user_text=%s",
         turn_trace_id or "-",
         session_id,
         source_type,
         current_state.current_question_no,
         current_state.is_interview_complete,
+        load_ms,
         _truncate_for_log(user_text),
         _truncate_for_log(raw_user_text),
     )
@@ -348,7 +443,9 @@ def _run_user_turn(
             detail="이미 모든 질문이 완료되었습니다.",
         )
 
+    process_started_at = time.perf_counter()
     outcome = process_voice_interview_answer(current_state, user_text)
+    process_ms = _elapsed_ms(process_started_at)
     assistant_text = outcome.assistant_text
     decision = outcome.decision
     reason_code = outcome.reason_code
@@ -369,6 +466,7 @@ def _run_user_turn(
         _truncate_for_log(outcome.answer_summary),
     )
     if _should_persist_user_turn(decision, reason_code):
+        persist_user_started_at = time.perf_counter()
         _insert_session_message(session_id, "user", user_text)
         try:
             append_question_answer_record(
@@ -386,18 +484,30 @@ def _run_user_turn(
                 current_state.current_question_no,
                 exc_info=True,
             )
+        persist_user_ms = _elapsed_ms(persist_user_started_at)
+    else:
+        persist_user_ms = 0
+    save_state_started_at = time.perf_counter()
     _save_voice_interview_state(session_id, outcome.next_state)
+    save_state_ms = _elapsed_ms(save_state_started_at)
     if outcome.next_state.is_interview_complete:
         _update_voice_session_status(session_id, user_id, VOICE_COMPLETED_STATUS)
     display_user_text = user_text if _should_echo_user_text(reason_code) else ""
 
+    persist_assistant_started_at = time.perf_counter()
     _insert_session_message(session_id, "assistant", assistant_text)
+    persist_assistant_ms = _elapsed_ms(persist_assistant_started_at)
     logger.info(
-        "[voice_turn:%s] done session_id=%s next_question_no=%s interview_complete=%s display_user_text=%s assistant_text=%s",
+        "[voice_turn:%s] done session_id=%s next_question_no=%s interview_complete=%s process_ms=%s persist_user_ms=%s save_state_ms=%s persist_assistant_ms=%s total_run_ms=%s display_user_text=%s assistant_text=%s",
         turn_trace_id or "-",
         session_id,
         outcome.next_state.current_question_no,
         outcome.next_state.is_interview_complete,
+        process_ms,
+        persist_user_ms,
+        save_state_ms,
+        persist_assistant_ms,
+        _elapsed_ms(started_at),
         _truncate_for_log(display_user_text),
         _truncate_for_log(assistant_text),
     )
@@ -406,12 +516,14 @@ def _run_user_turn(
 
 @router.post("/turn", response_model=VoiceTurnResponse)
 async def voice_turn(
+    background_tasks: BackgroundTasks,
     session_id: UUID = Form(...),
     audio_file: UploadFile = File(...),
     user_id: str = Depends(get_current_user_id),
 ) -> VoiceTurnResponse:
     _get_session_or_404(session_id, user_id)
     turn_trace_id = uuid4().hex
+    request_started_at = time.perf_counter()
 
     try:
         audio_bytes = await audio_file.read()
@@ -424,8 +536,11 @@ async def voice_turn(
             audio_file.content_type,
             len(audio_bytes),
         )
+        stt_started_at = time.perf_counter()
         raw_user_text = _transcribe_audio(audio_bytes, audio_file.filename)
+        stt_ms = _elapsed_ms(stt_started_at)
         user_text = _normalize_stt_text(raw_user_text)
+        run_started_at = time.perf_counter()
         display_user_text, assistant_text, decision, reason_code, interview_state = _run_user_turn(
             session_id=session_id,
             user_id=user_id,
@@ -434,8 +549,26 @@ async def voice_turn(
             raw_user_text=raw_user_text,
             turn_trace_id=turn_trace_id,
         )
-        tts_audio = _synthesize_tts(assistant_text)
-        audio_url = _save_tts_file(session_id, tts_audio)
+        run_ms = _elapsed_ms(run_started_at)
+        enqueue_started_at = time.perf_counter()
+        audio_id, audio_status, audio_url = _enqueue_tts_job(
+            background_tasks,
+            session_id,
+            user_id,
+            assistant_text,
+            str(turn_trace_id),
+        )
+        enqueue_ms = _elapsed_ms(enqueue_started_at)
+        logger.info(
+            "[voice_turn:%s] response_ready session_id=%s stt_ms=%s run_ms=%s enqueue_tts_ms=%s total_response_ms=%s audio_status=%s",
+            turn_trace_id,
+            session_id,
+            stt_ms,
+            run_ms,
+            enqueue_ms,
+            _elapsed_ms(request_started_at),
+            audio_status,
+        )
     except HTTPException:
         logger.warning(
             "[voice_turn:%s] http_exception session_id=%s user_id=%s",
@@ -461,6 +594,8 @@ async def voice_turn(
         user_text=display_user_text,
         assistant_text=assistant_text,
         audio_url=audio_url,
+        audio_status=audio_status,
+        audio_id=audio_id,
         decision=decision,
         reason_code=reason_code,
         interview_state=interview_state,
@@ -469,12 +604,14 @@ async def voice_turn(
 
 @router.post("/text-turn", response_model=VoiceTurnResponse)
 async def voice_text_turn(
+    background_tasks: BackgroundTasks,
     session_id: UUID = Form(...),
     user_text: str = Form(...),
     user_id: str = Depends(get_current_user_id),
 ) -> VoiceTurnResponse:
     _get_session_or_404(session_id, user_id)
     turn_trace_id = uuid4().hex
+    request_started_at = time.perf_counter()
     cleaned_text = user_text.strip()
     if not cleaned_text:
         raise HTTPException(
@@ -483,6 +620,7 @@ async def voice_text_turn(
         )
 
     try:
+        run_started_at = time.perf_counter()
         display_user_text, assistant_text, decision, reason_code, interview_state = _run_user_turn(
             session_id=session_id,
             user_id=user_id,
@@ -490,8 +628,25 @@ async def voice_text_turn(
             source_type="text",
             turn_trace_id=turn_trace_id,
         )
-        tts_audio = _synthesize_tts(assistant_text)
-        audio_url = _save_tts_file(session_id, tts_audio)
+        run_ms = _elapsed_ms(run_started_at)
+        enqueue_started_at = time.perf_counter()
+        audio_id, audio_status, audio_url = _enqueue_tts_job(
+            background_tasks,
+            session_id,
+            user_id,
+            assistant_text,
+            str(turn_trace_id),
+        )
+        enqueue_ms = _elapsed_ms(enqueue_started_at)
+        logger.info(
+            "[voice_text_turn:%s] response_ready session_id=%s run_ms=%s enqueue_tts_ms=%s total_response_ms=%s audio_status=%s",
+            turn_trace_id,
+            session_id,
+            run_ms,
+            enqueue_ms,
+            _elapsed_ms(request_started_at),
+            audio_status,
+        )
     except HTTPException:
         logger.warning(
             "[voice_text_turn:%s] http_exception session_id=%s user_id=%s",
@@ -517,7 +672,30 @@ async def voice_text_turn(
         user_text=display_user_text,
         assistant_text=assistant_text,
         audio_url=audio_url,
+        audio_status=audio_status,
+        audio_id=audio_id,
         decision=decision,
         reason_code=reason_code,
         interview_state=interview_state,
+    )
+
+
+@router.get("/audio/{audio_id}", response_model=VoiceAudioStatusResponse)
+async def voice_audio_status(
+    audio_id: str,
+    user_id: str = Depends(get_current_user_id),
+) -> VoiceAudioStatusResponse:
+    with TTS_JOBS_LOCK:
+        job = dict(TTS_JOBS.get(audio_id) or {})
+
+    if not job or job.get("user_id") != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="AI 음성 작업을 찾을 수 없습니다.",
+        )
+
+    return VoiceAudioStatusResponse(
+        audio_id=audio_id,
+        audio_status=str(job.get("audio_status") or "pending"),
+        audio_url=job.get("audio_url"),
     )

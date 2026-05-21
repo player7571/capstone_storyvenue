@@ -14,10 +14,9 @@ from app.services.interview.decision import (
 )
 from app.services.interview.follow_up import (
     build_follow_up_fallback,
-    build_interviewer_acknowledgement_fallback,
-    build_interviewer_guidance,
+    build_interviewer_turn_fallback,
     request_follow_up_question,
-    request_interviewer_acknowledgement,
+    request_interviewer_turn,
 )
 from app.services.interview.llm import get_interview_openai_client
 from app.services.interview.state import (
@@ -46,11 +45,16 @@ from app.services.interview.store import (
     save_voice_interview_state_to_store,
 )
 from app.services.interview.types import (
+    AckTone,
+    EmotionalTone,
     FollowUpQuestionResponse,
     InterviewerAcknowledgementResponse,
+    InterviewerTurnResponse,
     INTERVIEW_STATE_PREFIX,
     INTERVIEW_STATE_ROLE,
+    FollowUpGoal,
     InterviewQuestion,
+    QuestionFlow,
     QuestionStatus,
     SlotName,
     TurnDecision,
@@ -64,12 +68,17 @@ from app.services.interview.types import (
 __all__ = [
     "FollowUpQuestionResponse",
     "InterviewerAcknowledgementResponse",
+    "InterviewerTurnResponse",
+    "AckTone",
+    "EmotionalTone",
+    "FollowUpGoal",
     "INTERVIEW_STATE_PREFIX",
     "INTERVIEW_STATE_ROLE",
     "InterviewQuestion",
     "MAX_EXTRA_FOLLOW_UPS_FOR_NEAR_PASS",
     "MAX_FOLLOW_UPS",
     "QUESTION_BANK_VERSION",
+    "QuestionFlow",
     "QuestionStatus",
     "SlotName",
     "TurnDecision",
@@ -83,8 +92,7 @@ __all__ = [
     "append_question_answer",
     "append_question_answer_record",
     "build_follow_up_fallback",
-    "build_interviewer_acknowledgement_fallback",
-    "build_interviewer_guidance",
+    "build_interviewer_turn_fallback",
     "build_initial_voice_interview_state",
     "build_question_answer_conversation_history",
     "build_voice_interview_prompt_state",
@@ -108,7 +116,7 @@ __all__ = [
     "move_voice_interview_question",
     "parse_voice_interview_state",
     "request_follow_up_question",
-    "request_interviewer_acknowledgement",
+    "request_interviewer_turn",
     "request_voice_interview_assessment",
     "save_voice_interview_state_to_store",
     "serialize_voice_interview_state",

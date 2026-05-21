@@ -1,6 +1,6 @@
 from app.services.interview.types import InterviewQuestion
 
-QUESTION_BANK_VERSION = 1
+QUESTION_BANK_VERSION = 3
 MAX_FOLLOW_UPS = 2
 MAX_EXTRA_FOLLOW_UPS_FOR_NEAR_PASS = 1
 
@@ -19,10 +19,14 @@ VOICE_INTERVIEW_QUESTIONS: list[InterviewQuestion] = [
             ["scene", "emotion"],
         ],
         story_generatable_routes=[
-            ["scene"],
-            ["place", "emotion"],
-            ["person", "emotion"],
+            ["place", "person", "scene"],
+            ["person", "scene"],
+            ["place", "person", "emotion"],
         ],
+        story_generatable_min_length=32,
+        story_min_detail_score=2,
+        story_min_distinct_slots=3,
+        follow_up_flow="background_memory",
     ),
     InterviewQuestion(
         question_no=2,
@@ -37,10 +41,14 @@ VOICE_INTERVIEW_QUESTIONS: list[InterviewQuestion] = [
             ["scene", "emotion"],
         ],
         story_generatable_routes=[
-            ["event"],
-            ["scene"],
-            ["emotion", "time"],
+            ["event", "scene", "emotion"],
+            ["event", "time", "scene", "emotion"],
         ],
+        story_generatable_min_length=34,
+        story_min_detail_score=2,
+        story_min_distinct_slots=2,
+        story_min_reflection_score=1,
+        follow_up_flow="event_sequence",
     ),
     InterviewQuestion(
         question_no=3,
@@ -55,10 +63,14 @@ VOICE_INTERVIEW_QUESTIONS: list[InterviewQuestion] = [
             ["person", "emotion"],
         ],
         story_generatable_routes=[
-            ["event"],
-            ["person", "scene"],
-            ["person", "emotion"],
+            ["event", "person", "scene"],
+            ["event", "person", "value"],
+            ["person", "scene", "value"],
         ],
+        story_generatable_min_length=36,
+        story_min_detail_score=2,
+        story_min_distinct_slots=3,
+        follow_up_flow="peer_life_memory",
     ),
     InterviewQuestion(
         question_no=4,
@@ -73,10 +85,15 @@ VOICE_INTERVIEW_QUESTIONS: list[InterviewQuestion] = [
             ["event", "scene"],
         ],
         story_generatable_routes=[
-            ["event"],
-            ["scene"],
-            ["value", "emotion"],
+            ["event", "scene", "emotion"],
+            ["event", "value", "emotion"],
+            ["event", "scene", "value"],
         ],
+        story_generatable_min_length=40,
+        story_min_detail_score=2,
+        story_min_distinct_slots=3,
+        story_min_reflection_score=1,
+        follow_up_flow="event_sequence",
     ),
     InterviewQuestion(
         question_no=5,
@@ -91,10 +108,14 @@ VOICE_INTERVIEW_QUESTIONS: list[InterviewQuestion] = [
             ["person", "event"],
         ],
         story_generatable_routes=[
-            ["person", "emotion"],
             ["person", "event"],
-            ["person", "value"],
+            ["person", "emotion", "event"],
+            ["person", "value", "event"],
         ],
+        story_generatable_min_length=28,
+        story_min_detail_score=1,
+        story_min_distinct_slots=2,
+        follow_up_flow="person_memory",
     ),
     InterviewQuestion(
         question_no=6,
@@ -109,10 +130,14 @@ VOICE_INTERVIEW_QUESTIONS: list[InterviewQuestion] = [
             ["event", "emotion"],
         ],
         story_generatable_routes=[
-            ["event"],
-            ["event", "emotion"],
-            ["place", "emotion"],
+            ["event", "place", "emotion"],
+            ["event", "place", "scene", "emotion"],
         ],
+        story_generatable_min_length=36,
+        story_min_detail_score=2,
+        story_min_distinct_slots=3,
+        story_min_reflection_score=1,
+        follow_up_flow="event_sequence",
         near_pass_extra_follow_ups=1,
     ),
     InterviewQuestion(
@@ -128,11 +153,15 @@ VOICE_INTERVIEW_QUESTIONS: list[InterviewQuestion] = [
             ["person", "emotion"],
         ],
         story_generatable_routes=[
-            ["event"],
-            ["event", "emotion"],
-            ["person", "emotion"],
-            ["value", "emotion"],
+            ["event", "emotion", "value"],
+            ["event", "person", "emotion"],
+            ["event", "emotion", "scene"],
         ],
+        story_generatable_min_length=40,
+        story_min_detail_score=2,
+        story_min_distinct_slots=3,
+        story_min_reflection_score=1,
+        follow_up_flow="event_sequence",
         near_pass_extra_follow_ups=1,
     ),
     InterviewQuestion(
@@ -148,10 +177,14 @@ VOICE_INTERVIEW_QUESTIONS: list[InterviewQuestion] = [
             ["scene", "emotion"],
         ],
         story_generatable_routes=[
-            ["event"],
-            ["scene", "emotion"],
-            ["person", "emotion"],
+            ["event", "emotion", "person"],
+            ["event", "emotion", "scene"],
         ],
+        story_generatable_min_length=32,
+        story_min_detail_score=2,
+        story_min_distinct_slots=3,
+        story_min_reflection_score=1,
+        follow_up_flow="event_sequence",
     ),
     InterviewQuestion(
         question_no=9,
@@ -166,10 +199,14 @@ VOICE_INTERVIEW_QUESTIONS: list[InterviewQuestion] = [
             ["time", "value"],
         ],
         story_generatable_routes=[
-            ["event"],
-            ["value", "emotion"],
-            ["event", "time"],
+            ["event", "value", "emotion"],
+            ["event", "time", "value"],
         ],
+        story_generatable_min_length=36,
+        story_min_detail_score=2,
+        story_min_distinct_slots=3,
+        story_min_reflection_score=1,
+        follow_up_flow="event_sequence",
     ),
     InterviewQuestion(
         question_no=10,
@@ -184,10 +221,15 @@ VOICE_INTERVIEW_QUESTIONS: list[InterviewQuestion] = [
             ["person", "emotion"],
         ],
         story_generatable_routes=[
-            ["value"],
-            ["person", "value"],
-            ["value", "emotion"],
+            ["value", "person", "emotion"],
+            ["value", "event", "emotion"],
+            ["value", "person", "event"],
         ],
+        story_generatable_min_length=40,
+        story_min_detail_score=2,
+        story_min_distinct_slots=3,
+        story_min_reflection_score=1,
+        follow_up_flow="legacy_message",
         near_pass_extra_follow_ups=1,
     ),
 ]

@@ -142,11 +142,15 @@ def _load_voice_question_story_context(
         )
 
     current_answer_text = "\n".join(current_answers).strip()
+    # 질문별 누적 답변을 한 덩어리로 합치면 마지막 답변이 상대적으로 더 강하게
+    # 읽히기 쉬워서, 초안 생성에는 각 답변 턴을 분리된 사용자 발화로 전달합니다.
     history: list[dict[str, str]] = [
         {
             "role": "user",
-            "content": current_answer_text,
-        },
+            "content": answer.strip(),
+        }
+        for answer in current_answers
+        if answer.strip()
     ]
 
     story_quality = get_question_story_quality(state, question_no)
@@ -206,7 +210,7 @@ async def generate_chapter(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="이 질문에 답변이 있어야 이야기를 만들 수 있어요.",
         )
-    if story_quality == "basic" and not body.allow_basic:
+    if story_quality in {"basic", "almost_ready"} and not body.allow_basic:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="답변이 조금 짧아요. 지금 생성할지 한 번 더 이야기할지 선택해주세요.",

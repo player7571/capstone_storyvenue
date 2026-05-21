@@ -10,8 +10,6 @@ from app.services.interview.state import (
     get_question_answers,
     get_question_story_quality,
     is_question_story_generatable,
-    is_question_story_ready,
-    merge_story_qualities,
 )
 from app.services.interview.types import VoiceInterviewState
 
@@ -226,35 +224,13 @@ def save_voice_interview_state_to_store(session_id: UUID, state: VoiceInterviewS
         .execute()
     )
 
-    existing_rows = (
-        get_supabase()
-        .table(QUESTION_STATE_TABLE)
-        .select("question_no, story_quality, story_ready")
-        .eq("session_id", str(session_id))
-        .execute()
-    ).data or []
-    existing_story_quality_by_question = {
-        int(row.get("question_no") or 0): str(row.get("story_quality") or "").strip().lower()
-        for row in existing_rows
-        if int(row.get("question_no") or 0) > 0
-    }
-    existing_story_ready_by_question = {
-        int(row.get("question_no") or 0): bool(row.get("story_ready") or False)
-        for row in existing_rows
-        if int(row.get("question_no") or 0) > 0
-    }
-
     rows = []
     for question_no in range(1, get_total_question_count() + 1):
         answers = get_question_answers(state, question_no)
         answer_count = get_question_answer_count(state, question_no)
         computed_story_quality = get_question_story_quality(state, question_no)
-        persisted_story_quality = existing_story_quality_by_question.get(question_no)
-        story_quality = merge_story_qualities(persisted_story_quality, computed_story_quality)
-        story_ready = (
-            existing_story_ready_by_question.get(question_no, False)
-            or is_question_story_generatable(state, question_no)
-        )
+        story_quality = computed_story_quality
+        story_ready = is_question_story_generatable(state, question_no)
         rows.append(
             {
                 "session_id": str(session_id),

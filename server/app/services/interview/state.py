@@ -5,12 +5,10 @@ from app.services.interview.question_bank import (
     get_interview_question,
     get_total_question_count,
 )
-from app.services.interview.slot_keywords import extract_local_slots
 from app.services.interview.types import (
     INTERVIEW_STATE_PREFIX,
     INTERVIEW_STATE_ROLE,
     QuestionStatus,
-    SlotName,
     StoryQuality,
     VoiceInterviewPromptState,
     VoiceInterviewState,
@@ -18,7 +16,7 @@ from app.services.interview.types import (
 
 
 def build_initial_voice_interview_state() -> VoiceInterviewState:
-    return VoiceInterviewState()
+    return VoiceInterviewState(question_bank_version=QUESTION_BANK_VERSION)
 
 
 def _question_key(question_no: int) -> str:
@@ -28,7 +26,8 @@ def _question_key(question_no: int) -> str:
 _STORY_QUALITY_RANK: dict[StoryQuality, int] = {
     "none": 0,
     "basic": 1,
-    "ready": 2,
+    "almost_ready": 2,
+    "ready": 3,
 }
 
 
@@ -147,32 +146,21 @@ def get_question_story_quality(
     state: VoiceInterviewState,
     question_no: int,
 ) -> StoryQuality:
-    stored_quality = _normalize_question_story_qualities(state).get(_question_key(question_no), "none")
+    normalized_story_qualities = _normalize_question_story_qualities(state)
+    normalized_story_ready_flags = _normalize_question_story_ready_flags(state)
+    key = _question_key(question_no)
+    stored_quality = normalized_story_qualities.get(key, "none")
     answers = get_question_answers(state, question_no)
     if not answers:
         return merge_story_qualities(stored_quality, "none")
 
-    computed_quality: StoryQuality = "basic"
+    if stored_quality != "none":
+        return stored_quality
 
-    if question_no == state.current_question_no and state.last_decision == "pass":
-        computed_quality = "ready"
+    if normalized_story_ready_flags.get(key, False):
+        return "ready"
 
-    return merge_story_qualities(stored_quality, computed_quality)
-
-
-def _extract_story_slots_from_answers(answers: list[str]) -> list[SlotName]:
-    combined = "\n".join(answer.strip() for answer in answers if answer.strip())
-    if not combined:
-        return []
-    return extract_local_slots(combined)
-
-
-def _matches_story_generatable_route(question_no: int, answers: list[str]) -> bool:
-    question = get_interview_question(question_no)
-    extracted_slots = set(_extract_story_slots_from_answers(answers))
-    if not extracted_slots:
-        return False
-    return any(all(slot in extracted_slots for slot in route) for route in question.story_generatable_routes)
+    return "basic"
 
 
 def is_question_story_generatable(
@@ -182,21 +170,7 @@ def is_question_story_generatable(
     answers = get_question_answers(state, question_no)
     if not answers:
         return False
-
-    story_quality = get_question_story_quality(state, question_no)
-    if story_quality == "ready":
-        return True
-
-    stored_ready_flags = _normalize_question_story_ready_flags(state)
-    if stored_ready_flags.get(_question_key(question_no)):
-        return True
-
-    question = get_interview_question(question_no)
-    aggregated_answer = "\n".join(answer.strip() for answer in answers if answer.strip())
-    if len(aggregated_answer) < question.story_generatable_min_length:
-        return False
-
-    return _matches_story_generatable_route(question_no, answers)
+    return get_question_story_quality(state, question_no) == "ready"
 
 
 def is_question_story_ready(

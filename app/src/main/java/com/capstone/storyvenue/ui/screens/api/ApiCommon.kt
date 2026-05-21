@@ -186,12 +186,28 @@ internal fun parseInterviewState(json: JSONObject?): InterviewPromptData? {
 
 internal fun parseVoiceTurnData(json: JSONObject): VoiceTurnData {
     val audioUrl = json.optCleanString("audio_url")
+    val audioStatus = json.optCleanString("audio_status").ifBlank {
+        if (audioUrl.isNotBlank()) "ready" else "disabled"
+    }
     return VoiceTurnData(
         userText = json.optString("user_text", ""),
         assistantText = json.optString("assistant_text", ""),
         audioUrl = audioUrl.takeIf { it.isNotBlank() }?.let { toAbsoluteUrl(it) },
+        audioStatus = audioStatus,
+        audioId = json.optCleanString("audio_id").ifBlank { null },
         decision = json.optCleanString("decision").ifBlank { null },
         reasonCode = json.optCleanString("reason_code").ifBlank { null },
         interviewState = parseInterviewState(json.optJSONObject("interview_state")),
+    )
+}
+
+internal fun parseVoiceAudioStatusData(json: JSONObject): VoiceAudioStatusData {
+    val audioUrl = json.optCleanString("audio_url")
+    return VoiceAudioStatusData(
+        audioId = json.optCleanString("audio_id"),
+        audioStatus = json.optCleanString("audio_status").ifBlank {
+            if (audioUrl.isNotBlank()) "ready" else "pending"
+        },
+        audioUrl = audioUrl.takeIf { it.isNotBlank() }?.let { toAbsoluteUrl(it) },
     )
 }

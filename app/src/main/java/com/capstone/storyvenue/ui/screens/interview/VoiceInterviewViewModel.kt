@@ -20,6 +20,8 @@ data class VoiceInterviewUiState(
     val interviewPrompt: InterviewPromptData? = null,
     val assistantText: String = "마이크 버튼을 눌러 음성으로 시작하거나, 사진을 첨부해 대화를 시작하세요.",
     val latestAudioUrl: String? = null,
+    val latestAudioStatus: String = "disabled",
+    val latestAudioId: String? = null,
     val lastRecordedFileName: String = "",
     val recordingSeconds: Int = 0,
     val errorMessage: String? = null,
@@ -186,7 +188,15 @@ class VoiceInterviewViewModel : ViewModel() {
         fileName: String,
         contentType: String,
     ) {
-        _uiState.update { it.copy(isUploadingAudio = true, errorMessage = null) }
+        _uiState.update {
+            it.copy(
+                isUploadingAudio = true,
+                errorMessage = null,
+                latestAudioUrl = null,
+                latestAudioStatus = "disabled",
+                latestAudioId = null,
+            )
+        }
         val result = withContext(Dispatchers.IO) {
             ApiService.voiceTurn(
                 token = token,
@@ -207,7 +217,15 @@ class VoiceInterviewViewModel : ViewModel() {
     }
 
     suspend fun submitTextTurn(token: String, sessionId: String, userText: String) {
-        _uiState.update { it.copy(isSubmittingText = true, errorMessage = null) }
+        _uiState.update {
+            it.copy(
+                isSubmittingText = true,
+                errorMessage = null,
+                latestAudioUrl = null,
+                latestAudioStatus = "disabled",
+                latestAudioId = null,
+            )
+        }
         val result = withContext(Dispatchers.IO) {
             ApiService.voiceTextTurn(token = token, sessionId = sessionId, userText = userText)
         }
@@ -233,6 +251,8 @@ class VoiceInterviewViewModel : ViewModel() {
                     interviewPrompt = prompt,
                     userText = "",
                     latestAudioUrl = null,
+                    latestAudioStatus = "disabled",
+                    latestAudioId = null,
                     assistantText = "이전 질문으로 돌아왔어요. 천천히 다시 이야기해주세요.",
                 )
             }
@@ -254,6 +274,8 @@ class VoiceInterviewViewModel : ViewModel() {
                     interviewPrompt = prompt,
                     userText = "",
                     latestAudioUrl = null,
+                    latestAudioStatus = "disabled",
+                    latestAudioId = null,
                     assistantText = if (prompt.isInterviewComplete) {
                         "질문이 모두 끝났어요. 이제 이야기를 생성해보세요."
                     } else {
@@ -304,6 +326,9 @@ class VoiceInterviewViewModel : ViewModel() {
                     activePhotoUrl = attached.photoUrl.takeIf { value -> value.isNotBlank() },
                     activePhotoArtifactId = attached.artifactId.ifBlank { null },
                     activePhotoLinkedQuestionNo = attached.linkedQuestionNo,
+                    latestAudioUrl = null,
+                    latestAudioStatus = "disabled",
+                    latestAudioId = null,
                     assistantText = attached.aiMessage.orEmpty().ifBlank {
                         "사진을 보며 현재 질문과 관련된 기억을 천천히 이야기해주세요."
                     },
@@ -332,8 +357,23 @@ class VoiceInterviewViewModel : ViewModel() {
                 userText = normalizedUserText,
                 assistantText = voice.assistantText,
                 latestAudioUrl = voice.audioUrl,
+                latestAudioStatus = voice.audioStatus,
+                latestAudioId = voice.audioId,
                 interviewPrompt = voice.interviewState ?: it.interviewPrompt,
             )
+        }
+    }
+
+    fun applyVoiceAudioStatus(audio: VoiceAudioStatusData) {
+        _uiState.update {
+            if (it.latestAudioId != audio.audioId) {
+                it
+            } else {
+                it.copy(
+                    latestAudioUrl = audio.audioUrl ?: it.latestAudioUrl,
+                    latestAudioStatus = audio.audioStatus,
+                )
+            }
         }
     }
 

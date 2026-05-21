@@ -1,43 +1,27 @@
 from difflib import SequenceMatcher
+import logging
 import re
 from textwrap import dedent
 
-from app.services.interview.llm import get_interview_openai_client
+from app.services.interview.llm import (
+    build_interview_prompt_cache_body,
+    get_interview_openai_client,
+    log_interview_prompt_cache_usage,
+)
+from app.services.interview.question_prompts import build_assessment_system_prompt
 from app.services.interview.slot_keywords import extract_local_slots
 from app.services.interview.state import get_question_answers
 from app.services.interview.types import (
+    EmotionalBlend,
+    EmotionalTone,
     InterviewQuestion,
+    QuestionFlow,
     SlotName,
     VoiceInterviewAssessment,
     VoiceInterviewState,
 )
 
-ASSESSMENT_SYSTEM_PROMPT = dedent(
-    """
-    당신은 노인 사용자의 자서전 인터뷰를 돕는 한국어 인터뷰 분석 도우미입니다.
-    현재 질문과 사용자의 누적 답변을 보고, 어떤 정보가 이미 나왔는지 구조화해서 반환하세요.
-
-    중요:
-    - 최종 통과 여부(pass/follow_up/move_on/repeat)는 당신이 결정하지 않습니다.
-    - 당신은 정보 추출과 점수화만 담당합니다.
-    - filled_slots와 missing_slots에는 반드시 person, place, time, event, emotion, scene, value 중에서만 고르세요.
-    - relevance_score는 0~2:
-      0 = 질문과 거의 무관함
-      1 = 부분적으로 관련 있음
-      2 = 질문에 분명히 맞는 답변
-    - detail_score는 0~2:
-      0 = 정보가 거의 없음
-      1 = 정보가 1개 정도 있음
-      2 = 정보가 2개 이상 비교적 또렷함
-    - reflection_score는 0~1:
-      0 = 감정/의미/가치가 거의 없음
-      1 = 감정이나 의미가 드러남
-    - transcript_unclear는 소음이 많거나 뜻을 거의 파악하기 어려울 때만 true로 하세요.
-    - off_topic은 말 자체는 들리지만 현재 질문과 방향이 꽤 어긋날 때만 true로 하세요.
-    - question_echo는 사용자가 답하지 않고 현재 질문이나 질문에 매우 가까운 문장을 그대로 되묻는 경우만 true로 하세요.
-    - answer_summary는 사용자의 답변을 1문장 이내로 짧게 요약합니다.
-    """
-).strip()
+logger = logging.getLogger(__name__)
 
 QUESTION_LIKE_ENDINGS = (
     "?",
@@ -51,7 +35,6 @@ QUESTION_LIKE_ENDINGS = (
     "있어요?",
     "었나요",
 )
-
 
 def _sanitize_slots(
     raw_slots: list[str],
@@ -150,6 +133,64 @@ def _looks_like_question_echo(question: InterviewQuestion, user_text: str) -> bo
         return True
     return False
 
+def _sanitize_flow_type(raw_value: str | None, fallback: QuestionFlow) -> QuestionFlow:
+    value = str(raw_value or "").strip().lower()
+    if value in {
+        "default",
+        "event_sequence",
+        "person_focus",
+        "value_focus",
+        "background_memory",
+        "peer_life_memory",
+        "person_memory",
+        "legacy_message",
+    }:
+        return value  # type: ignore[return-value]
+    return fallback
+
+
+def _sanitize_emotional_tone(raw_value: str | None) -> EmotionalTone:
+    value = str(raw_value or "").strip().lower()
+    if value in {"positive", "negative", "fearful", "warm", "neutral"}:
+        return value  # type: ignore[return-value]
+    return "neutral"
+
+
+def _sanitize_emotional_blend(
+    raw_value: str | None,
+    emotional_tone: EmotionalTone,
+) -> EmotionalBlend:
+    value = str(raw_value or "").strip().lower()
+    allowed = {
+        "none",
+        "warm_relief",
+        "support",
+        "gratitude",
+        "pride_after_hardship",
+        "sad_warmth",
+        "regret",
+    }
+    if value not in allowed:
+        return "none"
+
+    # The blend is only a secondary signal. Keep it conservative so it cannot
+    # flip a painful/fearful answer into an overly positive acknowledgement.
+    if emotional_tone == "fearful" and value in {"warm_relief", "support", "sad_warmth"}:
+        return value  # type: ignore[return-value]
+    if emotional_tone == "negative" and value in {
+        "warm_relief",
+        "support",
+        "gratitude",
+        "sad_warmth",
+        "regret",
+    }:
+        return value  # type: ignore[return-value]
+    if emotional_tone == "positive" and value in {"gratitude", "pride_after_hardship"}:
+        return value  # type: ignore[return-value]
+    if emotional_tone == "warm" and value in {"gratitude", "support", "sad_warmth", "regret"}:
+        return value  # type: ignore[return-value]
+    return "none"
+
 
 def _build_assessment_input(
     question: InterviewQuestion,
@@ -157,34 +198,31 @@ def _build_assessment_input(
     user_text: str,
 ) -> str:
     current_answers = get_question_answers(state, state.current_question_no)
-    previous_answers = "\n".join(f"- {text}" for text in current_answers if text.strip())
-    previous_answers_text = previous_answers or "- 없음"
-    last_follow_up = state.last_follow_up_question or "없음"
+    previous_answers_text = " | ".join(text for text in current_answers if text.strip()) or "없음"
 
     return dedent(
         f"""
-        현재 메인 질문:
+        현재 질문:
         {question.main_question}
 
         질문 힌트:
         {question.hint}
 
-        이 질문에서 보고 싶은 정보:
-        {", ".join(question.target_slots)}
+        질문에서 중요하게 보고 싶은 정보:
+        target_slots={", ".join(question.target_slots) if question.target_slots else "없음"}
+        required_slots={", ".join(question.required_slots) if question.required_slots else "없음"}
+        expected_flow={question.follow_up_flow}
 
-        이 질문에서 특히 중요하게 보고 싶은 정보:
-        {", ".join(question.required_slots) if question.required_slots else "없음"}
-
-        이전까지 모인 답변:
+        같은 질문에서 이전까지 나온 누적 답변:
         {previous_answers_text}
 
-        직전에 물었던 보조 질문:
-        {last_follow_up}
+        마지막 follow-up 질문:
+        {state.last_follow_up_question or "없음"}
 
         이번 사용자 답변:
         {user_text}
 
-        지금까지 사용한 보조 질문 횟수:
+        현재 follow_up_count:
         {state.follow_up_count}
         """
     ).strip()
@@ -212,6 +250,7 @@ def _normalize_assessment(
         assessment.relevance_score = 0
         assessment.detail_score = 0
         assessment.reflection_score = 0
+        assessment.emotional_blend = "none"
         assessment.transcript_unclear = False
         assessment.off_topic = False
         if not assessment.answer_summary.strip():
@@ -240,7 +279,30 @@ def _normalize_assessment(
     if not assessment.missing_slots:
         assessment.missing_slots = [
             slot for slot in question.target_slots if slot not in assessment.filled_slots
-        ] or list(question.target_slots)
+        ]
+
+    fallback_flow: QuestionFlow = question.follow_up_flow if question.follow_up_flow != "default" else "default"
+    assessment.flow_type = _sanitize_flow_type(assessment.flow_type, fallback_flow)
+    assessment.emotional_tone = _sanitize_emotional_tone(assessment.emotional_tone)
+    assessment.emotional_blend = _sanitize_emotional_blend(
+        assessment.emotional_blend,
+        assessment.emotional_tone,
+    )
+    assessment.setup_present = bool(assessment.setup_present)
+    assessment.development_present = bool(assessment.development_present)
+    assessment.result_present = bool(assessment.result_present)
+    assessment.emotion_present = bool(assessment.emotion_present)
+    assessment.meaning_present = bool(assessment.meaning_present)
+    assessment.person_present = bool(assessment.person_present)
+
+    if "person" in assessment.filled_slots:
+        assessment.person_present = True
+    if "emotion" in assessment.filled_slots:
+        assessment.emotion_present = True
+    if "value" in assessment.filled_slots:
+        assessment.meaning_present = True
+    if "event" in assessment.filled_slots:
+        assessment.setup_present = assessment.setup_present or True
 
     return assessment
 
@@ -252,11 +314,14 @@ def request_voice_interview_assessment(
 ) -> VoiceInterviewAssessment:
     response = get_interview_openai_client().responses.parse(
         model="gpt-4.1-mini",
-        instructions=ASSESSMENT_SYSTEM_PROMPT,
+        instructions=build_assessment_system_prompt(question),
         input=_build_assessment_input(question, state, user_text),
         temperature=0.2,
+        max_output_tokens=360,
         text_format=VoiceInterviewAssessment,
+        extra_body=build_interview_prompt_cache_body("assessment", question),
     )
+    log_interview_prompt_cache_usage(logger, "assessment", question, response)
 
     parsed = response.output_parsed
     if parsed is None:

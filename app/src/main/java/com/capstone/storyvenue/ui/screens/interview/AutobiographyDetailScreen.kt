@@ -67,7 +67,6 @@ private fun buildAutobiographyBody(chapters: List<BookChapterPayloadData>): Stri
         .filter { it.isNotBlank() }
         .joinToString(separator = "\n\n")
 }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AutobiographyDetailScreen(
@@ -660,4 +659,3 @@ fun AutobiographyDetailScreen(
         }
     }
 }
-
