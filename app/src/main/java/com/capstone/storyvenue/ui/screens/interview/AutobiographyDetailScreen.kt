@@ -6,10 +6,12 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,6 +19,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -39,6 +42,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -47,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -66,6 +71,15 @@ private fun buildAutobiographyBody(chapters: List<BookChapterPayloadData>): Stri
         .map { it.content.trim() }
         .filter { it.isNotBlank() }
         .joinToString(separator = "\n\n")
+}
+
+private val PARAGRAPH_SPLIT = Regex("\n\\s*\n+")
+
+private fun splitChapterParagraphs(content: String): List<String> {
+    if (content.isBlank()) return emptyList()
+    return PARAGRAPH_SPLIT.split(content.trim())
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
 }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,6 +102,8 @@ fun AutobiographyDetailScreen(
     var editingTitle by remember { mutableStateOf("") }
     var editingSubtitle by remember { mutableStateOf("") }
     var editingBody by remember { mutableStateOf("") }
+
+    val chapterPhotoBitmaps = remember { mutableStateMapOf<String, ImageBitmap?>() }
 
     var isPdfSheetOpen by remember { mutableStateOf(false) }
     var pdfIncludeCover by remember { mutableStateOf(false) }
@@ -154,6 +170,26 @@ fun AutobiographyDetailScreen(
     }
 
     LaunchedEffect(bookId) { loadBook() }
+
+    LaunchedEffect(currentBook?.id, currentBook?.chapters) {
+        val chapters = currentBook?.chapters ?: return@LaunchedEffect
+        chapters.forEach { chapter ->
+            val url = chapter.photoUrl?.takeIf { it.isNotBlank() } ?: return@forEach
+            if (chapterPhotoBitmaps.containsKey(url)) return@forEach
+            chapterPhotoBitmaps[url] = null
+            launch {
+                val result = withContext(Dispatchers.IO) { ApiService.fetchImageBytes(url) }
+                result.onSuccess { bytes ->
+                    val bitmap = runCatching {
+                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                    }.getOrNull()
+                    if (bitmap != null) {
+                        chapterPhotoBitmaps[url] = bitmap
+                    }
+                }
+            }
+        }
+    }
 
     fun shareBook() {
         if (isSharing || book?.shared == true) return
@@ -337,7 +373,14 @@ fun AutobiographyDetailScreen(
                     book == null -> CenteredMessage("자서전을 찾을 수 없어요.")
                     else -> {
                         val detailBook = book!!
-                        val autobiographyBody = detailBook.body.ifBlank { buildAutobiographyBody(detailBook.chapters) }
+                        val joinedChapterBody = buildAutobiographyBody(detailBook.chapters).trim()
+                        val rawBody = detailBook.body.trim()
+                        val hasCustomBody = rawBody.isNotEmpty() && rawBody != joinedChapterBody
+                        val orderedChapters = detailBook.chapters
+                            .sortedBy { it.sourceQuestionNo ?: Int.MAX_VALUE }
+                        val showChapterList =
+                            !isEditMode && !hasCustomBody && orderedChapters.isNotEmpty()
+                        val autobiographyBody = detailBook.body.ifBlank { joinedChapterBody }
                         LazyColumn(
                             verticalArrangement = Arrangement.spacedBy(14.dp),
                             contentPadding = PaddingValues(vertical = 16.dp),
@@ -386,31 +429,42 @@ fun AutobiographyDetailScreen(
                                     }
                                 }
                             }
-                            item {
-                                Card(
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = CardDefaults.cardColors(containerColor = StoryVenueColors.Surface),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
-                                    Column(modifier = Modifier.padding(20.dp)) {
-                                        if (isEditMode) {
-                                            OutlinedTextField(
-                                                value = editingBody,
-                                                onValueChange = { editingBody = it },
-                                                label = { Text("자서전 본문") },
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .heightIn(min = 360.dp),
-                                                shape = RoundedCornerShape(16.dp),
-                                            )
-                                        } else {
-                                            Text(
-                                                text = autobiographyBody.ifBlank { "자서전 본문이 아직 비어 있어요." },
-                                                fontSize = 16.sp,
-                                                lineHeight = 26.sp,
-                                                color = StoryVenueColors.OnSurface,
-                                            )
+                            if (showChapterList) {
+                                items(orderedChapters, key = { it.id }) { chapter ->
+                                    ChapterDetailCard(
+                                        chapter = chapter,
+                                        photoBitmap = chapter.photoUrl
+                                            ?.takeIf { it.isNotBlank() }
+                                            ?.let { chapterPhotoBitmaps[it] },
+                                    )
+                                }
+                            } else {
+                                item {
+                                    Card(
+                                        shape = RoundedCornerShape(16.dp),
+                                        colors = CardDefaults.cardColors(containerColor = StoryVenueColors.Surface),
+                                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Column(modifier = Modifier.padding(20.dp)) {
+                                            if (isEditMode) {
+                                                OutlinedTextField(
+                                                    value = editingBody,
+                                                    onValueChange = { editingBody = it },
+                                                    label = { Text("자서전 본문") },
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .heightIn(min = 360.dp),
+                                                    shape = RoundedCornerShape(16.dp),
+                                                )
+                                            } else {
+                                                Text(
+                                                    text = autobiographyBody.ifBlank { "자서전 본문이 아직 비어 있어요." },
+                                                    fontSize = 16.sp,
+                                                    lineHeight = 26.sp,
+                                                    color = StoryVenueColors.OnSurface,
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -655,6 +709,73 @@ fun AutobiographyDetailScreen(
                     isExporting = isExportingPdf,
                     onConfirm = { exportPdf() },
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChapterDetailCard(
+    chapter: BookChapterPayloadData,
+    photoBitmap: ImageBitmap?,
+) {
+    val paragraphs = remember(chapter.id, chapter.content) {
+        splitChapterParagraphs(chapter.content)
+    }
+    val photoUrl = chapter.photoUrl?.takeIf { it.isNotBlank() }
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = StoryVenueColors.Surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            if (chapter.title.isNotBlank()) {
+                Text(
+                    text = chapter.title,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = StoryVenueColors.OnSurface,
+                    lineHeight = 28.sp,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            if (paragraphs.isEmpty()) {
+                if (photoUrl != null && photoBitmap != null) {
+                    Image(
+                        bitmap = photoBitmap,
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 280.dp),
+                    )
+                }
+            } else {
+                paragraphs.forEachIndexed { index, paragraph ->
+                    Text(
+                        text = paragraph,
+                        fontSize = 16.sp,
+                        lineHeight = 26.sp,
+                        color = StoryVenueColors.OnSurface,
+                    )
+                    if (index == 0 && photoUrl != null && photoBitmap != null) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Image(
+                            bitmap = photoBitmap,
+                            contentDescription = null,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 280.dp),
+                        )
+                    }
+                    if (index < paragraphs.lastIndex) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                    }
+                }
             }
         }
     }

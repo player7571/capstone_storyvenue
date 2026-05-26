@@ -34,6 +34,7 @@ class BookChapterPayload(BaseModel):
     title: str
     content: str
     source_question_no: int | None = None
+    photo_url: str | None = None
 
 
 class BookSummaryResponse(BaseModel):

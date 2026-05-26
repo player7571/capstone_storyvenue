@@ -24,6 +24,7 @@ from app.services.book_pdf import (
     render_book_pdf,
 )
 from app.services.safety import check_content_safety
+from app.services.session_artifacts import PHOTO_ARTIFACT_TYPE, list_session_artifacts
 
 MAX_COVER_IMAGE_BYTES = 10 * 1024 * 1024
 
@@ -236,6 +237,46 @@ def _create_book_version(user_id: str, title: str, subtitle: str | None, chapter
     return _normalize_book_row(created.data[0])
 
 
+def _load_chapter_photo_urls(session_id: UUID) -> dict[int, str]:
+    try:
+        rows = list_session_artifacts(
+            session_id=session_id,
+            artifact_type=PHOTO_ARTIFACT_TYPE,
+        )
+    except Exception:
+        return {}
+
+    photos_by_question: dict[int, str] = {}
+    # 한 질문당 사진은 하나만 유지. 같은 질문에 여러 장이 올라온 경우 가장 최근 것을 사용.
+    # list_session_artifacts는 created_at desc 순이므로, 아직 본 적 없는 질문만 채운다.
+    for row in rows:
+        question_no = row.get("linked_question_no")
+        storage_url = str(row.get("storage_url") or "").strip()
+        if question_no is None or not storage_url:
+            continue
+        question_key = int(question_no)
+        if question_key in photos_by_question:
+            continue
+        photos_by_question[question_key] = storage_url
+    return photos_by_question
+
+
+def _attach_chapter_photos(
+    chapters: list[dict],
+    photo_urls_by_question: dict[int, str],
+) -> list[dict]:
+    if not photo_urls_by_question:
+        return chapters
+    for chapter in chapters:
+        question_no = chapter.get("source_question_no")
+        if question_no is None:
+            continue
+        url = photo_urls_by_question.get(int(question_no))
+        if url:
+            chapter["photo_url"] = url
+    return chapters
+
+
 def _generate_and_store_autobiography(body: AutobiographyCreateRequest, user_id: str) -> dict:
     chapter_id_values = [str(chapter_id) for chapter_id in body.chapter_ids]
 
@@ -259,6 +300,8 @@ def _generate_and_store_autobiography(body: AutobiographyCreateRequest, user_id:
             chapters=ordered_source_chapters,
         )
         polished_chapters = generated_book["chapters"]
+        photo_urls_by_question = _load_chapter_photo_urls(body.session_id)
+        polished_chapters = _attach_chapter_photos(polished_chapters, photo_urls_by_question)
         subtitle = str(generated_book.get("subtitle") or "").strip() or generate_book_subtitle(
             book_title=body.title,
             chapter_titles=[chapter["title"] for chapter in polished_chapters],

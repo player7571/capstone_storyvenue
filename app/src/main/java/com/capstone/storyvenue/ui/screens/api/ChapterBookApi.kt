@@ -24,6 +24,11 @@ object ChapterBookApi {
                     } else {
                         null
                     },
+                    photoUrl = if (obj.has("photo_url") && !obj.isNull("photo_url")) {
+                        obj.optString("photo_url", "").takeIf { it.isNotBlank() }
+                    } else {
+                        null
+                    },
                 )
             )
         }

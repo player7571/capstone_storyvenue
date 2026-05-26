@@ -5,6 +5,7 @@ import io
 import re
 from datetime import date, datetime
 from pathlib import Path
+from urllib.request import Request, urlopen
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from PIL import Image
@@ -18,6 +19,9 @@ OVERRIDE_CHAPTER_TITLE_SENTINEL = "__edited_body__"
 OVERRIDE_CHAPTER_SOURCE_NO = 0
 
 MAX_COVER_IMAGE_PIXELS = 1600
+MAX_CHAPTER_PHOTO_PIXELS = 1200
+MAX_CHAPTER_PHOTO_BYTES = 10 * 1024 * 1024
+CHAPTER_PHOTO_FETCH_TIMEOUT_SECONDS = 8
 ALLOWED_IMAGE_MIME = {"image/jpeg", "image/png", "image/webp"}
 
 _PARAGRAPH_SPLIT = re.compile(r"\n\s*\n+")
@@ -35,6 +39,43 @@ def _split_paragraphs(text: str) -> list[str]:
         return []
     parts = _PARAGRAPH_SPLIT.split(text.strip())
     return [part.strip() for part in parts if part.strip()]
+
+
+def _prepare_chapter_photo_data_url(photo_url: str) -> str | None:
+    cleaned = (photo_url or "").strip()
+    if not cleaned:
+        return None
+    try:
+        request = Request(cleaned, headers={"User-Agent": "storyvenue-pdf/1.0"})
+        with urlopen(request, timeout=CHAPTER_PHOTO_FETCH_TIMEOUT_SECONDS) as response:
+            image_bytes = response.read(MAX_CHAPTER_PHOTO_BYTES + 1)
+    except Exception:
+        return None
+    if not image_bytes or len(image_bytes) > MAX_CHAPTER_PHOTO_BYTES:
+        return None
+
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as img:
+            img.load()
+            if img.mode == "RGBA":
+                background = Image.new("RGB", img.size, (255, 255, 255))
+                background.paste(img, mask=img.split()[-1])
+                img = background
+            elif img.mode != "RGB":
+                img = img.convert("RGB")
+
+            img.thumbnail(
+                (MAX_CHAPTER_PHOTO_PIXELS, MAX_CHAPTER_PHOTO_PIXELS),
+                Image.LANCZOS,
+            )
+
+            buffer = io.BytesIO()
+            img.save(buffer, format="JPEG", quality=82, optimize=True)
+            encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    except Exception:
+        return None
+
+    return f"data:image/jpeg;base64,{encoded}"
 
 
 def _normalize_chapters_for_pdf(raw_chapters: list[dict]) -> list[dict]:
@@ -65,6 +106,9 @@ def _normalize_chapters_for_pdf(raw_chapters: list[dict]) -> list[dict]:
         {
             "title": str(chapter.get("title") or "").strip() or "이야기",
             "paragraphs": _split_paragraphs(str(chapter.get("content") or "")),
+            "photo_data_url": _prepare_chapter_photo_data_url(
+                str(chapter.get("photo_url") or "")
+            ),
         }
         for chapter in visible
     ]

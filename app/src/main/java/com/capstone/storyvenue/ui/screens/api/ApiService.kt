@@ -382,4 +382,5 @@ data class BookChapterPayloadData(
     val title: String,
     val content: String,
     val sourceQuestionNo: Int? = null,
+    val photoUrl: String? = null,
 )
