@@ -171,3 +171,19 @@ html, body {
 .chapter p:first-of-type {
     text-indent: 0;
 }
+
+.chapter-photo {
+    margin: 6mm 0 6mm 0;
+    padding: 0;
+    text-align: center;
+    page-break-inside: avoid;
+}
+
+.chapter-photo img {
+    max-width: 100%;
+    max-height: 100mm;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 2mm;
+}

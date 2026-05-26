@@ -37,7 +37,17 @@
         <h2 class="chapter-title">{{ chapter.title }}</h2>
         {% for paragraph in chapter.paragraphs %}
         <p>{{ paragraph }}</p>
+        {% if loop.first and chapter.photo_data_url %}
+        <figure class="chapter-photo">
+            <img src="{{ chapter.photo_data_url }}" alt="">
+        </figure>
+        {% endif %}
         {% endfor %}
+        {% if not chapter.paragraphs and chapter.photo_data_url %}
+        <figure class="chapter-photo">
+            <img src="{{ chapter.photo_data_url }}" alt="">
+        </figure>
+        {% endif %}
     </section>
     {% endfor %}
 </body>
