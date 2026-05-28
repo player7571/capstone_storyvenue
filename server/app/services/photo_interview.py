@@ -2,11 +2,11 @@ from base64 import b64encode
 from functools import lru_cache
 from textwrap import dedent
 
-from openai import OpenAI
+import anthropic
 
 from app.core.config import get_settings
 
-PHOTO_INTERVIEW_MODEL = "gpt-4o-mini"
+PHOTO_INTERVIEW_MODEL = "claude-haiku-4-5"
 
 PHOTO_OPENING_SYSTEM_PROMPT = dedent(
     """
@@ -30,16 +30,11 @@ PHOTO_FOLLOW_UP_SYSTEM_PROMPT = dedent(
 
 
 @lru_cache
-def _get_openai_client() -> OpenAI:
+def _get_anthropic_client() -> anthropic.Anthropic:
     settings = get_settings()
-    if not settings.openai_api_key:
-        raise RuntimeError("OPENAI_API_KEY가 설정되지 않았습니다.")
-    return OpenAI(api_key=settings.openai_api_key)
-
-
-def _build_data_url(image_bytes: bytes, mime_type: str) -> str:
-    encoded = b64encode(image_bytes).decode("ascii")
-    return f"data:{mime_type};base64,{encoded}"
+    if not settings.anthropic_api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY가 설정되지 않았습니다.")
+    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 
 def _format_conversation_history(conversation_history: list[dict[str, str]]) -> str:
@@ -72,19 +67,27 @@ def generate_photo_opening_message(
 ) -> str:
     question_context = current_question or "이 사진과 관련해 떠오르는 기억이 있나요?"
     hint_line = f"\n질문 힌트: {question_hint}" if question_hint else ""
-    response = _get_openai_client().responses.create(
+
+    image_data = b64encode(image_bytes).decode("ascii")
+
+    response = _get_anthropic_client().messages.create(
         model=PHOTO_INTERVIEW_MODEL,
-        instructions=PHOTO_OPENING_SYSTEM_PROMPT,
-        input=[
+        max_tokens=256,
+        system=PHOTO_OPENING_SYSTEM_PROMPT,
+        messages=[
             {
                 "role": "user",
                 "content": [
                     {
-                        "type": "input_image",
-                        "image_url": _build_data_url(image_bytes, mime_type),
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": mime_type,
+                            "data": image_data,
+                        },
                     },
                     {
-                        "type": "input_text",
+                        "type": "text",
                         "text": (
                             "현재 질문에 답하기 쉽도록 이 사진을 활용해 짧게 이끌어 주세요.\n"
                             f"현재 질문: {question_context}"
@@ -95,9 +98,10 @@ def generate_photo_opening_message(
                 ],
             }
         ],
-        temperature=0.55,
     )
-    message = str(getattr(response, "output_text", "")).strip()
+
+    text_blocks = [b for b in response.content if b.type == "text"]
+    message = text_blocks[0].text.strip() if text_blocks else ""
     if not message:
         raise RuntimeError("사진 분석 응답을 생성하지 못했습니다.")
     return message
@@ -112,25 +116,33 @@ def generate_photo_follow_up_message(
     transcript = _format_conversation_history(conversation_history)
     question_context = current_question or "이 사진과 관련해 떠오르는 기억을 더 들려주세요."
     hint_line = f"\n질문 힌트: {question_hint}" if question_hint else ""
-    response = _get_openai_client().responses.create(
+
+    response = _get_anthropic_client().messages.create(
         model=PHOTO_INTERVIEW_MODEL,
-        instructions=PHOTO_FOLLOW_UP_SYSTEM_PROMPT,
-        input=dedent(
-            f"""
-            아래는 사진을 참고하며 진행한 인터뷰 대화입니다.
-            현재 질문에 더 잘 답할 수 있도록 최근 흐름을 이어가는 후속 질문을 작성하세요.
+        max_tokens=256,
+        system=PHOTO_FOLLOW_UP_SYSTEM_PROMPT,
+        messages=[
+            {
+                "role": "user",
+                "content": dedent(
+                    f"""
+                    아래는 사진을 참고하며 진행한 인터뷰 대화입니다.
+                    현재 질문에 더 잘 답할 수 있도록 최근 흐름을 이어가는 후속 질문을 작성하세요.
 
-            현재 질문:
-            {question_context}
-            {hint_line}
+                    현재 질문:
+                    {question_context}
+                    {hint_line}
 
-            대화:
-            {transcript}
-            """
-        ).strip(),
-        temperature=0.65,
+                    대화:
+                    {transcript}
+                    """
+                ).strip(),
+            }
+        ],
     )
-    message = str(getattr(response, "output_text", "")).strip()
+
+    text_blocks = [b for b in response.content if b.type == "text"]
+    message = text_blocks[0].text.strip() if text_blocks else ""
     if not message:
         raise RuntimeError("후속 질문 응답을 생성하지 못했습니다.")
     return message
