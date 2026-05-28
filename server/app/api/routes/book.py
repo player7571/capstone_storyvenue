@@ -1,6 +1,9 @@
+import logging
 import urllib.parse
 from io import BytesIO
 from uuid import UUID, uuid5
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -243,7 +246,8 @@ def _load_chapter_photo_urls(session_id: UUID) -> dict[int, str]:
             session_id=session_id,
             artifact_type=PHOTO_ARTIFACT_TYPE,
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning("session_artifacts fetch failed session=%s err=%s", session_id, exc)
         return {}
 
     photos_by_question: dict[int, str] = {}
@@ -470,10 +474,8 @@ async def share_book(
             detail="이미 공유된 자서전입니다.",
         )
 
-    preview = _build_feed_preview(
-        subtitle=book.get("subtitle"),
-        chapters=book.get("chapters") or [],
-    )
+    chapters = book.get("chapters") or []
+    preview = _build_feed_preview(subtitle=book.get("subtitle"), chapters=chapters)
     safety = check_content_safety(f"{book.get('title', '')}\n{preview}")
     if not safety["safe"]:
         raise HTTPException(
@@ -481,18 +483,26 @@ async def share_book(
             detail=f"부적절한 콘텐츠가 감지되었습니다: {safety['reason']}",
         )
 
+    sorted_chapters = sorted(chapters, key=lambda c: int(c.get("source_question_no") or 2**31 - 1))
+    cover_image_url = next(
+        (str(c["photo_url"]) for c in sorted_chapters if c.get("photo_url")),
+        None,
+    )
+
+    post_payload: dict = {
+        "user_id": user_id,
+        "book_id": str(book["id"]),
+        "title": book["title"],
+        "preview": preview,
+    }
+    if cover_image_url:
+        post_payload["cover_image_url"] = cover_image_url
+
     try:
         created_post = (
             get_supabase()
             .table("feed_posts")
-            .insert(
-                {
-                    "user_id": user_id,
-                    "book_id": str(book["id"]),
-                    "title": book["title"],
-                    "preview": preview,
-                }
-            )
+            .insert(post_payload)
             .execute()
         )
     except Exception as exc:
@@ -682,7 +692,6 @@ async def export_book_pdf(
     user_id: str = Depends(get_current_user_id),
 ):
     raw_book = _get_raw_book_or_404(book_id, user_id)
-
     cover_image_data_url: str | None = None
     if include_cover and cover_image is not None:
         if (cover_image.content_type or "").lower() not in ALLOWED_IMAGE_MIME:

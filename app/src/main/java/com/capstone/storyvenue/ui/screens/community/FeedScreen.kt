@@ -5,13 +5,16 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import coil.compose.AsyncImage
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,6 +23,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -55,6 +59,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -91,6 +96,7 @@ data class FeedPost(
     val preview: String,
     val likeCount: Int,
     val commentCount: Int,
+    val coverImageUrl: String? = null,
     val timeAgo: String,
     val likedByMe: Boolean = false,
 )
@@ -261,8 +267,12 @@ fun FeedScreen(
                             }
                         }
                     } else {
-                        items(posts) { post ->
-                            FeedPostCard(post = post, token = token, onClick = { onPostClick(post) })
+                        items(posts, key = { it.id }) { post ->
+                            FeedPostCard(
+                                post = post,
+                                token = token,
+                                onClick = { onPostClick(post) },
+                            )
                             Spacer(Modifier.height(12.dp))
                         }
                         item { Spacer(Modifier.height(16.dp)) }
@@ -630,24 +640,36 @@ fun FeedDetailScreen(
                         ) {
                             val currentBook = sharedBook
                         if (currentBook != null) {
-                            val autobiographyBody = buildSharedAutobiographyBody(currentBook)
-                            Column(modifier = Modifier.padding(20.dp)) {
-                                currentBook.subtitle?.takeIf { it.isNotBlank() }?.let { subtitle ->
-                                    Text(
-                                        text = subtitle,
-                                        fontSize = 16.sp,
-                                        color = StoryVenueColors.SubText,
-                                        fontFamily = SBAggroFamily,
-                                        lineHeight = 26.sp,
-                                    )
-                                    Spacer(Modifier.height(12.dp))
+                            val sortedChapters = currentBook.chapters
+                                .sortedBy { it.sourceQuestionNo ?: Int.MAX_VALUE }
+                                .filter { it.content.isNotBlank() || it.photoUrl != null }
+                            if (sortedChapters.isNotEmpty()) {
+                                Column(modifier = Modifier.padding(20.dp)) {
+                                    currentBook.subtitle?.takeIf { it.isNotBlank() }?.let { subtitle ->
+                                        Text(text = subtitle, fontSize = 16.sp, color = StoryVenueColors.SubText, fontFamily = SBAggroFamily, lineHeight = 26.sp)
+                                        Spacer(Modifier.height(12.dp))
+                                    }
+                                    sortedChapters.forEachIndexed { index, chapter ->
+                                        if (index > 0) Spacer(Modifier.height(16.dp))
+                                        if (chapter.content.isNotBlank()) {
+                                            Text(text = chapter.content.trim(), fontSize = 17.sp, color = StoryVenueColors.OnSurface, fontFamily = SBAggroFamily, lineHeight = 28.sp)
+                                        }
+                                        chapter.photoUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                                            Spacer(Modifier.height(10.dp))
+                                            AsyncImage(
+                                                model = url,
+                                                contentDescription = null,
+                                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
+                                                contentScale = ContentScale.FillWidth,
+                                            )
+                                        }
+                                    }
                                 }
+                            } else {
                                 Text(
-                                    text = autobiographyBody.ifBlank { post!!.preview },
-                                    fontSize = 17.sp,
-                                    color = StoryVenueColors.OnSurface,
-                                    fontFamily = SBAggroFamily,
-                                    lineHeight = 28.sp,
+                                    text = buildSharedAutobiographyBody(currentBook).ifBlank { post!!.preview },
+                                    fontSize = 17.sp, color = StoryVenueColors.OnSurface, fontFamily = SBAggroFamily, lineHeight = 28.sp,
+                                    modifier = Modifier.padding(20.dp),
                                 )
                             }
                         } else {
