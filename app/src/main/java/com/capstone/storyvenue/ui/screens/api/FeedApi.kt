@@ -15,6 +15,7 @@ object FeedApi {
         preview = obj.optString("preview", ""),
         likeCount = obj.optInt("like_count", 0),
         commentCount = obj.optInt("comment_count", 0),
+        coverImageUrl = obj.optCleanString("cover_image_url").takeIf { it.isNotBlank() },
         timeAgo = timeAgo(obj.optString("created_at", null)),
         likedByMe = obj.optBoolean("liked_by_me", false),
     )
