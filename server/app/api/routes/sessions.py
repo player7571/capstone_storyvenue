@@ -1,7 +1,10 @@
+import logging
 from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
+
+logger = logging.getLogger(__name__)
 
 from app.api.dependencies.auth import get_current_user_id
 from app.api.schemas.sessions import (
@@ -432,6 +435,7 @@ async def attach_photo_to_session(
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001
+        logger.exception("사진 첨부 오류 session=%s: %s", session_id, exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"사진 첨부 중 오류가 발생했습니다: {exc}",

@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import base64
 import io
+import logging
 import re
 from datetime import date, datetime
 from pathlib import Path
 from urllib.request import Request, urlopen
+
+logger = logging.getLogger(__name__)
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from PIL import Image
@@ -49,9 +52,11 @@ def _prepare_chapter_photo_data_url(photo_url: str) -> str | None:
         request = Request(cleaned, headers={"User-Agent": "storyvenue-pdf/1.0"})
         with urlopen(request, timeout=CHAPTER_PHOTO_FETCH_TIMEOUT_SECONDS) as response:
             image_bytes = response.read(MAX_CHAPTER_PHOTO_BYTES + 1)
-    except Exception:
+    except Exception as exc:
+        logger.warning("chapter photo fetch failed url=%s err=%s", cleaned[:80], exc)
         return None
     if not image_bytes or len(image_bytes) > MAX_CHAPTER_PHOTO_BYTES:
+        logger.warning("chapter photo empty or too large url=%s size=%d", cleaned[:80], len(image_bytes or b""))
         return None
 
     try:
@@ -72,7 +77,8 @@ def _prepare_chapter_photo_data_url(photo_url: str) -> str | None:
             buffer = io.BytesIO()
             img.save(buffer, format="JPEG", quality=82, optimize=True)
             encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-    except Exception:
+    except Exception as exc:
+        logger.warning("chapter photo process failed url=%s err=%s", cleaned[:80], exc)
         return None
 
     return f"data:image/jpeg;base64,{encoded}"
