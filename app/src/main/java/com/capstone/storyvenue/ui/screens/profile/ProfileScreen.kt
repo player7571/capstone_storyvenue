@@ -467,15 +467,6 @@ fun ProfileScreen(
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
-
-            Text(
-                text = if (avatarUrl == null) "사진 추가하기" else "사진 변경하기",
-                fontSize = 14.sp,
-                color = StoryVenueColors.SubText,
-                fontFamily = SBAggroFamily,
-            )
-
             Spacer(Modifier.height(16.dp))
 
             Text(
@@ -484,16 +475,6 @@ fun ProfileScreen(
                 fontWeight = FontWeight.Bold,
                 color = StoryVenueColors.OnSurface,
                 fontFamily = SBAggroFamily,
-            )
-
-            Spacer(Modifier.height(4.dp))
-
-            Text(
-                text = userEmail,
-                fontSize = 16.sp,
-                color = StoryVenueColors.OnSurface,
-                fontFamily = SBAggroFamily,
-                fontWeight = FontWeight.Bold,
             )
 
             Spacer(Modifier.height(32.dp))
