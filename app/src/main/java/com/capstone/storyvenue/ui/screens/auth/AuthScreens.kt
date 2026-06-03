@@ -3,6 +3,7 @@ package com.capstone.storyvenue.ui.screens
 import android.app.Activity
 import android.content.Context
 import android.net.Uri
+import android.view.ViewGroup
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -43,11 +44,13 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -440,6 +443,74 @@ private fun KakaoAuthWebViewDialog(
     onAuthError: (String) -> Unit,
     onAuthCodeReceived: (String, String) -> Unit,
 ) {
+    val context = LocalContext.current
+    val currentRedirectUri by rememberUpdatedState(redirectUri)
+    val currentExpectedState by rememberUpdatedState(expectedState)
+    val currentOnAuthError by rememberUpdatedState(onAuthError)
+    val currentOnAuthCodeReceived by rememberUpdatedState(onAuthCodeReceived)
+    val callbackHandled = remember(authorizeUrl) { mutableStateOf(false) }
+    val webView = remember(authorizeUrl) {
+        WebView(context).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            )
+            isFocusable = true
+            isFocusableInTouchMode = true
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+        }
+    }
+
+    DisposableEffect(webView) {
+        fun tryHandleCallback(url: String?): Boolean {
+            val targetUrl = url?.trim().orEmpty()
+            if (callbackHandled.value || targetUrl.isBlank()) return false
+            if (!targetUrl.startsWith(currentRedirectUri)) return false
+
+            callbackHandled.value = true
+            val (code, state, errorMessage) = parseKakaoCallbackUrl(targetUrl)
+            when {
+                !errorMessage.isNullOrBlank() ->
+                    currentOnAuthError("카카오 인증에 실패했습니다: $errorMessage")
+                state.isNullOrBlank() || state != currentExpectedState ->
+                    currentOnAuthError("카카오 인증 state 검증에 실패했습니다.")
+                !code.isNullOrBlank() -> currentOnAuthCodeReceived(code, state)
+                else -> currentOnAuthError("카카오 인증 코드를 확인할 수 없습니다.")
+            }
+            return true
+        }
+
+        webView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(
+                view: WebView?,
+                request: WebResourceRequest?,
+            ): Boolean = tryHandleCallback(request?.url?.toString())
+
+            override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean =
+                tryHandleCallback(url)
+
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                if (!tryHandleCallback(url)) {
+                    super.onPageStarted(view, url, favicon)
+                }
+            }
+        }
+
+        onDispose {
+            webView.stopLoading()
+            webView.webViewClient = WebViewClient()
+            (webView.parent as? ViewGroup)?.removeView(webView)
+            webView.destroy()
+        }
+    }
+
+    LaunchedEffect(webView, authorizeUrl) {
+        if (webView.url.isNullOrBlank()) {
+            webView.loadUrl(authorizeUrl)
+        }
+    }
+
     Dialog(
         onDismissRequest = onClose,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -451,49 +522,9 @@ private fun KakaoAuthWebViewDialog(
             Box(modifier = Modifier.fillMaxSize()) {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
-                    factory = { context ->
-                        WebView(context).apply {
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-
-                            var handled = false
-
-                            fun tryHandleCallback(url: String?): Boolean {
-                                val targetUrl = url?.trim().orEmpty()
-                                if (handled || targetUrl.isBlank()) return false
-                                if (!targetUrl.startsWith(redirectUri)) return false
-
-                                handled = true
-                                val (code, state, errorMessage) = parseKakaoCallbackUrl(targetUrl)
-                                when {
-                                    !errorMessage.isNullOrBlank() ->
-                                        onAuthError("카카오 인증에 실패했습니다: $errorMessage")
-                                    state.isNullOrBlank() || state != expectedState ->
-                                        onAuthError("카카오 인증 state 검증에 실패했습니다.")
-                                    !code.isNullOrBlank() -> onAuthCodeReceived(code, state)
-                                    else -> onAuthError("카카오 인증 코드를 확인할 수 없습니다.")
-                                }
-                                return true
-                            }
-
-                            webViewClient = object : WebViewClient() {
-                                override fun shouldOverrideUrlLoading(
-                                    view: WebView?,
-                                    request: WebResourceRequest?,
-                                ): Boolean = tryHandleCallback(request?.url?.toString())
-
-                                override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean =
-                                    tryHandleCallback(url)
-
-                                override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                                    if (!tryHandleCallback(url)) {
-                                        super.onPageStarted(view, url, favicon)
-                                    }
-                                }
-                            }
-
-                            loadUrl(authorizeUrl)
-                        }
+                    factory = {
+                        (webView.parent as? ViewGroup)?.removeView(webView)
+                        webView
                     },
                 )
 
